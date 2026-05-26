@@ -1,3 +1,24 @@
+# ==========================================
+# 1. Các file cấu hình IDE & OS (Quan trọng)
+# ==========================================
+.idea/
+*.iws
+*.iml
+*.ipr
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# 2. File bảo mật & Môi trường (CỰC KỲ QUAN TRỌNG)
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.local
+
+# ==========================================
+# 3. Các file build và thư mục đích của Maven
+# ==========================================
 target/
 pom.xml.tag
 pom.xml.releaseBackup
@@ -7,13 +28,18 @@ release.properties
 dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
-# https://maven.apache.org/tools/wrapper/#Usage_with_or_without_Binary_JAR
+# Tùy chọn: Nếu kh muốn up file jar của maven wrapper (thường kh cần thiết)
 .mvn/wrapper/maven-wrapper.jar
 
-# Eclipse m2e generated files
-# Eclipse Core
+# ==========================================
+# 4. Các file cấu hình Eclipse (Nếu có xài ké)
+# ==========================================
 .project
-# JDT-specific (Eclipse Java Development Tools)
 .classpath
+.settings/
+bin/
 
-.idea/
+# ==========================================
+# 5. File Log & Thống kê hệ thống
+# ==========================================
+*.log
