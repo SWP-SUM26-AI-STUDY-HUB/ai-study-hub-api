@@ -66,10 +66,6 @@ public class UserEntity {
     @Column(name = "plan_expires_at")
     private LocalDateTime planExpiresAt;
 
-    /**
-     * Get the UserRole enum representation.
-     * @return UserRole enum
-     */
     public UserRole getRoleEnum() {
         return role == null ? null : UserRole.valueOf(role.toLowerCase());
     }
