@@ -24,17 +24,23 @@ jobs:
             mkdir -p ~/ai-study-hub-api
             cd ~/ai-study-hub-api
 
-            # Tạo file .env
-            echo "DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }}" > .env
-            echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
-
             if [ -d ".git" ]; then
+              echo "directory exist, pull code..."
               git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-              git pull origin dev
+              git fetch --all
+              git reset --hard origin/dev
             else
+              echo "directory not exist, clone code..."
               git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
             fi
 
-            touch initdb.sql
+            echo "DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }}" > .env
+            echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
+            
+            if [ ! -f "initdb.sql" ]; then
+              touch initdb.sql
+            fi
+
+            echo "Đang khởi động lại Docker containers..."
             docker compose down
             docker compose up --build -d
