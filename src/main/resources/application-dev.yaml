@@ -1,0 +1,27 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  devtools:
+    add-properties: true
+  datasource:
+
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${DATABASE_USERNAME:dev}
+    password: ${DATABASE_PASSWORD:password}
+
+    hikari:
+      max-lifetime: 300000      # 5 phút
+      idle-timeout: 60000       # 1 phút
+      validation-timeout: 5000  # 5 giây
+      minimum-idle: 5
+      maximum-pool-size: 20
+  jpa:
+    show-sql: true              # Bật lên ở dev để debug SQL cho dễ m nè
+    hibernate:
+      ddl-auto: none
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}

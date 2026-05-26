@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="527a159b-bc60-4715-b4e1-57826f7743c2" name="Changes" comment="init" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="51" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="spring-beans.schema" />
+        <option value="Class" />
+        <option value="Interface" />
+        <option value="Dockerfile" />
+        <option value="GitHub Workflow" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "history": [
+    {
+      "state": "OPEN"
+    }
+  ],
+  "lastFilter": {
+    "state": "OPEN"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/SWP-SUM26-AI-STUDY-HUB/ai-study-hub-api",
+    "accountId": "2ec0fbea-b927-4b14-a99d-f455c7e38092"
+  }
+}]]></component>
+  <component name="MavenImportPreferences">
+    <option name="generalSettings">
+      <MavenGeneralSettings>
+        <option name="customMavenHome" value="/opt/homebrew/Cellar/maven/3.9.15/libexec" />
+        <option name="mavenHomeTypeForPersistence" value="CUSTOM" />
+      </MavenGeneralSettings>
+    </option>
+  </component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.6568097715031234" />
+      <entry key="MS500" value="2.686696155467647" />
+      <entry key="S2" value="3.9188654139634322" />
+      <entry key="S5" value="4.4911462572987375" />
+      <entry key="S10" value="4.730537064955871" />
+      <entry key="S30" value="4.906831944798186" />
+      <entry key="S60" value="4.9972365920907125" />
+      <entry key="M2" value="5.5971026085515785" />
+      <entry key="M5" value="8.110028150827631" />
+      <entry key="M10" value="10.561586841985974" />
+      <entry key="M15" value="11.9393017408448" />
+      <entry key="M30" value="15.144523977967534" />
+      <entry key="H1" value="21.486906744244045" />
+      <entry key="H2" value="29.575678549501603" />
+      <entry key="H4" value="36.32566044271022" />
+      <entry key="D1" value="44.13434974751117" />
+      <entry key="W1" value="45.72649194672069" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="1.3231191948555197E-237" />
+      <entry key="S30" value="2.8875273441503244E-79" />
+      <entry key="S60" value="1.1650446940935313E-39" />
+      <entry key="M2" value="7.554695389444586E-20" />
+      <entry key="M5" value="5.8832092790090783E-8" />
+      <entry key="M10" value="5.46838661198013E-4" />
+      <entry key="M15" value="0.011652464579014803" />
+      <entry key="M30" value="0.25530689271084867" />
+      <entry key="H1" value="1.2218386877323135" />
+      <entry key="H2" value="2.6970784154116454" />
+      <entry key="H4" value="4.018461353528679" />
+      <entry key="D1" value="5.61136048827676" />
+      <entry key="W1" value="5.9428506422708445" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.5535243559071106" />
+      <entry key="MS500" value="2.6066427682533613" />
+      <entry key="S2" value="3.7511977754402612" />
+      <entry key="S5" value="4.378255435661499" />
+      <entry key="S10" value="4.663159621550353" />
+      <entry key="S30" value="4.881538533340331" />
+      <entry key="S60" value="4.984194720344058" />
+      <entry key="M2" value="5.5904042843080655" />
+      <entry key="M5" value="8.107191271987482" />
+      <entry key="M10" value="10.56064653787872" />
+      <entry key="M15" value="11.949921178800295" />
+      <entry key="M30" value="15.399095522450342" />
+      <entry key="H1" value="22.707972015273672" />
+      <entry key="H2" value="32.27206441787435" />
+      <entry key="H4" value="40.34363917676497" />
+      <entry key="D1" value="49.74560247614222" />
+      <entry key="W1" value="51.66932638348047" />
+    </decayedShown>
+  </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 7,
+  &quot;fromUser&quot;: false
+}</component>
+  <component name="ProjectId" id="3E2JsQB5W0i5glTQfQTD1ijqD5u" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "JUnit.AuthServiceImplTest.login_Failure_UsernameNotFound.executor": "Run",
+    "JUnit.AuthServiceImplTest.login_Success.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Notification.DisplayName-DoNotAsk-DatabaseConfigFileWatcher.found": "New/updated database configurations found",
+    "Notification.DoNotAsk-DatabaseConfigFileWatcher.found": "true",
+    "RequestMappingsPanelOrder0": "0",
+    "RequestMappingsPanelOrder1": "1",
+    "RequestMappingsPanelWidth0": "75",
+    "RequestMappingsPanelWidth1": "75",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "Spring Boot.AiStudyHubApiApplication.executor": "Run",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/chithien/code/ai-study-hub-api",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "discord-application",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+      <recent name="$PROJECT_DIR$/src/main/resources" />
+    </key>
+  </component>
+  <component name="RunManager" selected="JUnit.AuthServiceImplTest.login_Success">
+    <configuration name="AuthServiceImplTest.login_Failure_UsernameNotFound" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="ai-study-hub-api" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="vn.ai_study_hub_api.service.impl.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <option name="PACKAGE_NAME" value="vn.ai_study_hub_api.service.impl" />
+      <option name="MAIN_CLASS_NAME" value="vn.ai_study_hub_api.service.impl.AuthServiceImplTest" />
+      <option name="METHOD_NAME" value="login_Failure_UsernameNotFound" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="AuthServiceImplTest.login_Success" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="ai-study-hub-api" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="vn.ai_study_hub_api.service.impl.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <option name="PACKAGE_NAME" value="vn.ai_study_hub_api.service.impl" />
+      <option name="MAIN_CLASS_NAME" value="vn.ai_study_hub_api.service.impl.AuthServiceImplTest" />
+      <option name="METHOD_NAME" value="login_Success" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="AiStudyHubApiApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+      <module name="ai-study-hub-api" />
+      <option name="SPRING_BOOT_MAIN_CLASS" value="vn.ai_study_hub_api.AiStudyHubApiApplication" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="JUnit.AuthServiceImplTest.login_Success" />
+        <item itemvalue="JUnit.AuthServiceImplTest.login_Failure_UsernameNotFound" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-37e91769500f-intellij.indexing.shared.core-IU-261.24374.151" />
+        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-IU-261.24374.151" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="527a159b-bc60-4715-b4e1-57826f7743c2" name="Changes" comment="" />
+      <created>1779370936801</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1779370936801</updated>
+      <workItem from="1779370938127" duration="2472000" />
+      <workItem from="1779375546763" duration="167000" />
+      <workItem from="1779608670565" duration="207000" />
+      <workItem from="1779608900581" duration="1799000" />
+      <workItem from="1779616749408" duration="165000" />
+      <workItem from="1779631326649" duration="2494000" />
+      <workItem from="1779635073527" duration="571000" />
+      <workItem from="1779635655681" duration="4771000" />
+      <workItem from="1779668900051" duration="6614000" />
+      <workItem from="1779682824844" duration="383000" />
+      <workItem from="1779720235891" duration="255000" />
+      <workItem from="1779767942189" duration="848000" />
+      <workItem from="1779798105576" duration="4257000" />
+      <workItem from="1779808919091" duration="671000" />
+      <workItem from="1779809803075" duration="998000" />
+    </task>
+    <task id="LOCAL-00001" summary="init">
+      <option name="closed" value="true" />
+      <created>1779375305200</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1779375305200</updated>
+    </task>
+    <task id="LOCAL-00002" summary="init">
+      <option name="closed" value="true" />
+      <created>1779375702438</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1779375702439</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="UnknownFeatures">
+    <option featureType="dependencySupport" implementationName="java:org.springframework:spring-core" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework.security:spring-security-core" />
+    <option featureType="dependencySupport" implementationName="executable:docker" />
+    <option featureType="dependencySupport" implementationName="java:jakarta.validation:jakarta.validation-api" />
+    <option featureType="dependencySupport" implementationName="java:jakarta.persistence:jakarta.persistence-api" />
+    <option featureType="dependencySupport" implementationName="java:io.projectreactor:reactor-core" />
+    <option featureType="dependencySupport" implementationName="executable:kubectl" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework.data:spring-data-commons" />
+    <option featureType="dependencySupport" implementationName="java:org.hibernate.validator:hibernate-validator" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework.boot:spring-boot" />
+    <option featureType="dependencySupport" implementationName="java:org.springframework:spring-webmvc" />
+    <option featureType="dependencySupport" implementationName="java:org.projectlombok:lombok" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="init" />
+    <option name="LAST_COMMIT_MESSAGE" value="init" />
+  </component>
+  <component name="XSLT-Support.FileAssociations.UIState">
+    <expand />
+    <select />
+  </component>
+</project>
