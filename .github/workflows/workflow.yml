@@ -36,7 +36,7 @@ jobs:
               git reset --hard origin/dev
             else
               echo "directory not exist, clone code..."
-              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+              git clone -b dev https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
             fi
 
             echo "DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }}" > .env
