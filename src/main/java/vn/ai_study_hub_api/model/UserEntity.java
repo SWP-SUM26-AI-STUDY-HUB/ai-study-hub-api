@@ -6,9 +6,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * Entity class representing users in the system, mapped to the database table "users".
- */
+
 @Entity
 @Table(name = "users")
 @Getter
