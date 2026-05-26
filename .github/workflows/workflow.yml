@@ -21,6 +21,11 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           script: |
+            if [ ! -d "$HOME/ai-study-hub-api/.git" ]; then
+              echo "directory not exist, clone code..."
+              rm -rf ~/ai-study-hub-api
+            fi
+            
             mkdir -p ~/ai-study-hub-api
             cd ~/ai-study-hub-api
 
