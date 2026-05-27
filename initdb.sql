@@ -62,7 +62,7 @@ CREATE TABLE "users" (
   "updated_at" timestamp DEFAULT (now()),
   "google_id" varchar(255) UNIQUE,
   "plan_expires_at" timestamp,
-  "is_storage_counted" bolean DEFAULT true
+  "is_storage_counted" boolean DEFAULT true
 );
 
 CREATE TABLE "invoices" (
