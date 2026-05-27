@@ -1,5 +1,4 @@
 services:
-
   postgres:
     image: postgres:16-alpine
     container_name: postgres
@@ -53,3 +52,4 @@ networks:
 
 volumes:
   postgres:
+  redis_data:
