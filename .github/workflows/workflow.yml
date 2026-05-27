@@ -3,7 +3,7 @@ name: Deploy Spring Boot app to VPS
 on:
   push:
     branches:
-      - dev
+      - main
 
 jobs:
   deploy:
@@ -33,10 +33,10 @@ jobs:
               echo "directory exist, pull code..."
               git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
               git fetch --all
-              git reset --hard origin/dev
+              git reset --hard origin/main
             else
               echo "directory not exist, clone code..."
-              git clone -b dev https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
+              git clone -b main https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
             fi
             
             if [ ! -f "initdb.sql" ]; then
