@@ -47,13 +47,6 @@ public class UserEntity {
     @Builder.Default
     private Long storageUsed = 0L;
 
-    @Column(name = "ai_requests_today")
-    @Builder.Default
-    private Integer aiRequestsToday = 0;
-
-    @Column(name = "last_request_date")
-    private LocalDate lastRequestDate;
-
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 

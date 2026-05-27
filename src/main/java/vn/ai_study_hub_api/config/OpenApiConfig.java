@@ -12,6 +12,12 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI myOpenAPI() {
+        // Cấu hình server Local
+        Server localServer = new Server();
+        localServer.setUrl("http://localhost:8080");
+        localServer.setDescription("Local Server");
+
+        // Cấu hình server VPS
         Server vpsServer = new Server();
         vpsServer.setUrl("http://14.225.254.145:8080");
         vpsServer.setDescription("VPS Server");
@@ -21,6 +27,6 @@ public class OpenApiConfig {
                         .title("AI Study Hub API")
                         .version("1.0")
                         .description("API DOCUMENTATION"))
-                .servers(List.of(vpsServer));
+                .servers(List.of(localServer, vpsServer));
     }
 }
