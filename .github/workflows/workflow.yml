@@ -40,9 +40,9 @@ jobs:
             fi
             
             if [ ! -f "initdb.sql" ]; then
-              touch initdb.sql
+              echo "warning: initdb.sql not exist, skip import data..."
             fi
 
-            echo "Đang khởi động lại Docker containers..."
+            echo "restarting Docker containers..."
             docker compose down
             docker compose up --build -d
