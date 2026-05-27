@@ -38,9 +38,6 @@ jobs:
               echo "directory not exist, clone code..."
               git clone -b dev https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
             fi
-
-            echo "DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }}" > .env
-            echo "DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }}" >> .env
             
             if [ ! -f "initdb.sql" ]; then
               touch initdb.sql
