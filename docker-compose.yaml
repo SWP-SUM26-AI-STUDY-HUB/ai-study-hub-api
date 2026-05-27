@@ -17,6 +17,17 @@ services:
     networks:
       - default
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+
   backend-service:
     container_name: ai-study-hub-api
     build:
@@ -32,6 +43,7 @@ services:
       DATABASE_PASSWORD: ${DATABASE_PASSWORD}
     depends_on:
       - postgres
+      - redis
     networks:
       - default
 
