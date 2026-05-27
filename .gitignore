@@ -43,3 +43,4 @@ bin/
 # 5. File Log & Thống kê hệ thống
 # ==========================================
 *.log
+docker-compose.local.yaml
