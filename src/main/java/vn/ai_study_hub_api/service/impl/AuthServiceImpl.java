@@ -43,16 +43,16 @@ public class AuthServiceImpl implements AuthService {
     private final RestClient restClient = RestClient.create();
 
     // Inject các cấu hình từ application.yml
-    @Value("${security.oauth2.client.registration.google.client-id}")
+    @Value("${spring.security.oauth2.client.registration.google.client-id}")
     private String googleClientId;
 
-    @Value("${security.oauth2.client.registration.google.client-secret}")
+    @Value("${spring.security.oauth2.client.registration.google.client-secret}")
     private String googleClientSecret;
 
-    @Value("${security.oauth2.client.registration.google.redirect-uri}")
+    @Value("${spring.security.oauth2.client.registration.google.redirect-uri}")
     private String googleRedirectUri;
 
-    @Value("${security.oauth2.client.registration.google.user-info-uri}")
+    @Value("${spring.security.oauth2.client.provider.google.user-info-uri}")
     private String googleUserInfoUri;
 
     @Autowired
@@ -71,7 +71,7 @@ public class AuthServiceImpl implements AuthService {
         if (!"google".equalsIgnoreCase(loginType)) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported social login provider: " + loginType);
         }
-        
+
         return UriComponentsBuilder.fromUriString("https://accounts.google.com/o/oauth2/v2/auth")
                 .queryParam("client_id", googleClientId)
                 .queryParam("redirect_uri", googleRedirectUri)

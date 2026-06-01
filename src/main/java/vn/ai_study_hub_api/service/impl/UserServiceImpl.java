@@ -41,21 +41,26 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserEntity createOrUpdateUserFromOAuth2(String email, String fullName, String avatarUrl) {
+    public UserEntity createOrUpdateUserFromOAuth2(String email, String fullName, String avatarUrl, String googleId) {
         return userRepository.findByEmail(email)
                 .map(existingUser -> {
+                    // Nếu user đã tồn tại, kiểm tra xem có cần cập nhật googleId không
+                    if (existingUser.getGoogleId() == null) {
+                        existingUser.setGoogleId(googleId);
+                    }
                     if (fullName != null) existingUser.setFullName(fullName);
                     if (avatarUrl != null) existingUser.setAvatarUrl(avatarUrl);
                     return userRepository.save(existingUser);
                 })
                 .orElseGet(() -> {
+                    // Nếu user mới, tạo một bản ghi UserEntity hoàn toàn mới
                     UserEntity newUser = new UserEntity();
                     newUser.setEmail(email);
                     newUser.setFullName(fullName != null ? fullName : "Google User");
                     newUser.setAvatarUrl(avatarUrl);
-                    newUser.setRole("USER");
-                    newUser.setStatus("active");
-                    newUser.setPasswordHash(null);
+                    newUser.setGoogleId(googleId); // LƯU Ý: Đây là trường quan trọng
+                    newUser.setRole("user");       // Gán role mặc định
+                    newUser.setStatus("active");   // Gán status mặc định
                     return userRepository.save(newUser);
                 });
     }

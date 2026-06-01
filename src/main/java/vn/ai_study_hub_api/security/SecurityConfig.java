@@ -14,6 +14,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import vn.ai_study_hub_api.service.impl.GoogleOAuth2UserServiceImpl;
+import static org.springframework.security.config.Customizer.withDefaults;
 
 /**
  * Spring Security Configuration class.
@@ -24,10 +26,14 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final GoogleOAuth2UserServiceImpl googleOAuth2UserService;
+    private final OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler;
 
     @Autowired
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, GoogleOAuth2UserServiceImpl googleOAuth2UserService, OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.googleOAuth2UserService = googleOAuth2UserService;
+        this.oAuth2AuthenticationSuccessHandler = oAuth2AuthenticationSuccessHandler;
     }
 
     @Bean
@@ -60,9 +66,13 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh","/api/v1/auth/logout","/api/v1/auth/social-login").permitAll()
-
                         .requestMatchers(
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout",
+                                "/api/v1/auth/social-login",
+                                "/api/v1/auth/**",
+                                "/login/oauth2/**",
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html",
@@ -70,8 +80,12 @@ public class SecurityConfig {
                                 "/swagger-resources/**",
                                 "/configuration/**"
                         ).permitAll()
-
                         .anyRequest().authenticated()
+                )
+                .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(userInfo -> userInfo
+                                .userService(googleOAuth2UserService)
+                        ).successHandler(oAuth2AuthenticationSuccessHandler)
                 );
 
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

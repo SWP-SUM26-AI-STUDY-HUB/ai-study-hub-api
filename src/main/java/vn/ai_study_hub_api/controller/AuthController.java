@@ -54,6 +54,14 @@ public class AuthController {
                 .build();
     }
 
+    @GetMapping("/google/callback")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Google OAuth2 Callback", description = "Exchange authorization code for JWT tokens")
+    public ApiResponse<LoginResponse> googleCallback(@RequestParam("code") String code) {
+        LoginResponse response = authService.processGoogleLogin(code);
+        return ApiResponse.success(response, "Google login successful.");
+    }
+
     /**
      * Renew an access token using a valid active refresh token.
      * @param request Refresh token payload

@@ -15,5 +15,5 @@ public interface UserService {
      * @return List of UserResponse objects
      */
     List<UserResponse> getAllUsers();
-    UserEntity createOrUpdateUserFromOAuth2(String email, String fullName, String avatarUrl);
+    UserEntity createOrUpdateUserFromOAuth2(String email, String fullName, String avatarUrl, String googleId );
 }
