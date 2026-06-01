@@ -6,12 +6,16 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
 /**
  * Custom UserDetails implementation holding authenticated UserEntity details.
+ * Lớp này giúp Spring Security hiểu được thông tin user của hệ thống chúng ta.
  */
 @Getter
 @AllArgsConstructor
@@ -24,15 +28,20 @@ public class CustomUserDetails implements UserDetails {
     private final Collection<? extends GrantedAuthority> authorities;
 
     /**
-     * Map UserEntity into CustomUserDetails instance.
-     * @param user UserEntity source
-     * @return CustomUserDetails mapped instance
+     * Map UserEntity vào instance của CustomUserDetails.
+     * Sử dụng Enum thay vì String để đảm bảo tính an toàn dữ liệu.
+     * * @param user Đối tượng UserEntity từ database
+     * @return CustomUserDetails đã được cấu hình
      */
     public static CustomUserDetails build(UserEntity user) {
-        String roleStr = user.getRole().toUpperCase();
-        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr);
-        
-        boolean isActive = "active".equalsIgnoreCase(user.getStatus());
+        // Lấy vai trò (Role) từ Enum và gán tiền tố ROLE_ cho Spring Security
+        // .name() trả về giá trị kiểu String của Enum
+        String roleStr = user.getRole().name();
+        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr.toUpperCase());
+
+        // Kiểm tra trạng thái (Status) bằng cách so sánh trực tiếp Enum
+        // Trả về true nếu status là 'active'
+        boolean isActive = UserStatus.active.equals(user.getStatus());
 
         return new CustomUserDetails(
                 user.getId(),
@@ -60,21 +69,21 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isAccountNonExpired() {
-        return true;
+        return true; // Tài khoản không bao giờ hết hạn
     }
 
     @Override
     public boolean isAccountNonLocked() {
-        return active;
+        return active; // Tài khoản bị khóa nếu status không phải là active
     }
 
     @Override
     public boolean isCredentialsNonExpired() {
-        return true;
+        return true; // Mật khẩu không bao giờ hết hạn
     }
 
     @Override
     public boolean isEnabled() {
-        return active;
+        return active; // Chỉ cho phép đăng nhập nếu status là active
     }
 }

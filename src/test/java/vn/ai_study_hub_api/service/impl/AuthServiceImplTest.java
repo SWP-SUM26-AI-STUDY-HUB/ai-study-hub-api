@@ -13,6 +13,8 @@ import vn.ai_study_hub_api.controller.request.LoginRequest;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserRole;   // SỬA: Import Enum UserRole
+import vn.ai_study_hub_api.model.UserStatus; // SỬA: Import Enum UserStatus
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.security.JwtTokenProvider;
@@ -50,13 +52,14 @@ public class AuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        // SỬA: Chuyển đổi giá trị "user" và "active" từ String sang Enum chuẩn xác
         mockUser = UserEntity.builder()
                 .id(UUID.randomUUID())
                 .email("testuser@example.com")
                 .passwordHash("encoded_password_hash")
                 .fullName("Test User")
-                .role("user")
-                .status("active")
+                .role(UserRole.user)       // Đổi thành Enum
+                .status(UserStatus.active) // Đổi thành Enum
                 .build();
 
         validLoginRequest = new LoginRequest("testuser@example.com", "Password123!");
@@ -84,7 +87,9 @@ public class AuthServiceImplTest {
         assertEquals(mockUser.getId(), response.getId());
         assertEquals(mockUser.getEmail(), response.getEmail());
         assertEquals(mockUser.getFullName(), response.getFullName());
-        assertEquals(mockUser.getRole(), response.getRole());
+
+        // SỬA: LoginResponse trả về trường role dạng String nên cần sử dụng .name() từ Enum mockUser
+        assertEquals(mockUser.getRole().name(), response.getRole());
 
         verify(redisTokenService, times(1)).saveRefreshToken(
                 eq(mockUser.getId().toString()),

@@ -39,4 +39,7 @@ public interface RedisTokenService {
      * @return true if blacklisted, false otherwise
      */
     boolean isAccessTokenBlacklisted(String accessToken);
+    void saveOtp(String email, String otp, long ttlSeconds);
+    String getOtp(String email);
+    void deleteOtp(String email);
 }

@@ -14,6 +14,7 @@ public class RedisTokenServiceImpl implements RedisTokenService {
 
     private static final String REFRESH_TOKEN_PREFIX = "refresh_token:";
     private static final String BLACKLIST_TOKEN_PREFIX = "blacklist_token:";
+    private static final String OTP_PREFIX = "otp:"; // Prefix cho OTP
 
     private final StringRedisTemplate redisTemplate;
 
@@ -53,5 +54,26 @@ public class RedisTokenServiceImpl implements RedisTokenService {
         String key = BLACKLIST_TOKEN_PREFIX + accessToken;
         Boolean hasKey = redisTemplate.hasKey(key);
         return hasKey != null && hasKey;
+    }
+
+    @Override
+    public void saveOtp(String email, String otp, long ttlSeconds) {
+        String key = "otp:" + email;
+        redisTemplate.opsForValue().set(key, otp, ttlSeconds, TimeUnit.SECONDS);
+        System.out.println("DEBUG SAVING: Key=" + key + " | Value=" + otp); // LOG NÀY RẤT QUAN TRỌNG
+    }
+
+    @Override
+    public String getOtp(String email) {
+        String key = "otp:" + email;
+        String value = redisTemplate.opsForValue().get(key);
+        System.out.println("DEBUG GETTING: Key=" + key + " | FoundValue=" + value); // LOG NÀY RẤT QUAN TRỌNG
+        return value;
+    }
+
+    @Override
+    public void deleteOtp(String email) {
+        String key = "otp:" + email; // Key chuẩn: otp:email
+        redisTemplate.delete(key);
     }
 }

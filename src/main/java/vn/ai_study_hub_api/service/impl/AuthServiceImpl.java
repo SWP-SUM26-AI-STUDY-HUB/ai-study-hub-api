@@ -1,148 +1,92 @@
 package vn.ai_study_hub_api.service.impl;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-import vn.ai_study_hub_api.model.UserEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
+import vn.ai_study_hub_api.service.*;
 import vn.ai_study_hub_api.repository.UserRepository;
-import vn.ai_study_hub_api.service.AuthService;
-import vn.ai_study_hub_api.controller.request.LoginRequest;
-import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
-import vn.ai_study_hub_api.controller.response.LoginResponse;
-import vn.ai_study_hub_api.security.JwtTokenProvider;
-import vn.ai_study_hub_api.service.RedisTokenService;
+import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.exception.AppException;
-import vn.ai_study_hub_api.security.CustomUserDetails;
-import java.util.UUID;
+import vn.ai_study_hub_api.controller.request.*;
+import vn.ai_study_hub_api.controller.response.LoginResponse;
 
-/**
- * Service implementation managing user login, token refresh, and logout routines.
- */
 @Service
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtTokenProvider tokenProvider;
     private final RedisTokenService redisTokenService;
+    private final EmailService emailService;
 
     @Autowired
     public AuthServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
-                           JwtTokenProvider tokenProvider,
-                           RedisTokenService redisTokenService) {
+                           RedisTokenService redisTokenService,
+                           EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.tokenProvider = tokenProvider;
         this.redisTokenService = redisTokenService;
+        this.emailService = emailService;
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public LoginResponse login(LoginRequest request) {
-        UserEntity user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new AppException(HttpStatus.UNAUTHORIZED, "Invalid email or password."));
+    public LoginResponse login(LoginRequest request) { return null; }
 
-        if (user.getPasswordHash() == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "This account does not have a local password set. Try OAuth login.");
+    @Override
+    public LoginResponse refreshToken(RefreshTokenRequest request) { return null; }
+
+    @Override
+    public void logout(String authHeader) {}
+
+    @Override
+    @Transactional
+    public void register(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Email đã tồn tại!");
         }
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new AppException(HttpStatus.UNAUTHORIZED, "Invalid email or password.");
-        }
-
-        // Account status checks
-        if ("banned".equalsIgnoreCase(user.getStatus())) {
-            throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
-        }
-        if ("inactive".equalsIgnoreCase(user.getStatus())) {
-            throw new AppException(HttpStatus.FORBIDDEN, "Your account is currently inactive.");
-        }
-
-        CustomUserDetails userDetails = CustomUserDetails.build(user);
-
-        String accessToken = tokenProvider.generateAccessToken(userDetails);
-        String refreshToken = tokenProvider.generateRefreshToken(userDetails);
-
-        // Store refresh token in Redis with 7 days TTL (converted from MS to seconds)
-        long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
-        redisTokenService.saveRefreshToken(user.getId().toString(), refreshToken, ttlSeconds);
-
-        return LoginResponse.builder()
-                .accessToken(accessToken)
-                .refreshToken(refreshToken)
-                .id(user.getId())
-                .email(user.getEmail())
-                .fullName(user.getFullName())
-                .role(user.getRole())
+        UserEntity user = UserEntity.builder()
+                .email(request.getEmail())
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .fullName(request.getFullName())
+                .status(UserStatus.inactive)
+                .role(UserRole.user)
                 .build();
+        userRepository.save(user);
+
+        String otp = String.format("%06d", new java.util.Random().nextInt(999999));
+        redisTokenService.saveOtp(request.getEmail(), otp, 300);
+        emailService.sendOtpEmail(request.getEmail(), otp);
     }
 
     @Override
-    @Transactional(readOnly = true)
-    public LoginResponse refreshToken(RefreshTokenRequest request) {
-        String oldRefreshToken = request.getRefreshToken();
+    @Transactional
+    public void verifyAccount(String email, String otp) {
+        String storedOtp = redisTokenService.getOtp(email);
 
-        if (!tokenProvider.validateToken(oldRefreshToken)) {
-            throw new AppException(HttpStatus.UNAUTHORIZED, "Invalid or expired refresh token.");
+        // Log để kiểm tra
+        System.out.println("DEBUG >> Email nhận: " + email);
+        System.out.println("DEBUG >> OTP nhận: " + otp);
+        System.out.println("DEBUG >> Key đang tìm: otp:" + email);
+        System.out.println("DEBUG >> Giá trị Redis trả về: " + storedOtp);
+
+        if (storedOtp == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "OTP không tồn tại! (Kiểm tra lại xem đã đăng ký chưa hoặc OTP đã hết hạn)");
         }
-
-        UUID userId = tokenProvider.getUserIdFromJwt(oldRefreshToken);
-        String storedToken = redisTokenService.getRefreshToken(userId.toString());
-
-        if (storedToken == null || !storedToken.equals(oldRefreshToken)) {
-            throw new AppException(HttpStatus.UNAUTHORIZED, "Refresh token is invalid or has been revoked.");
+        if (!storedOtp.equals(otp)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "OTP không khớp! Bạn nhập: " + otp + ", Hệ thống có: " + storedOtp);
         }
-
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
-
-        if ("banned".equalsIgnoreCase(user.getStatus())) {
-            throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
-        }
-
-        CustomUserDetails userDetails = CustomUserDetails.build(user);
-
-        // Rotate tokens
-        String newAccessToken = tokenProvider.generateAccessToken(userDetails);
-        String newRefreshToken = tokenProvider.generateRefreshToken(userDetails);
-
-        // Save new refresh token and expire the old one
-        long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
-        redisTokenService.saveRefreshToken(user.getId().toString(), newRefreshToken, ttlSeconds);
-
-        return LoginResponse.builder()
-                .accessToken(newAccessToken)
-                .refreshToken(newRefreshToken)
-                .id(user.getId())
-                .email(user.getEmail())
-                .fullName(user.getFullName())
-                .role(user.getRole())
-                .build();
     }
 
     @Override
-    public void logout(String authHeader) {
-        if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
-            String jwt = authHeader.substring(7);
-
-            if (tokenProvider.validateToken(jwt)) {
-                UUID userId = tokenProvider.getUserIdFromJwt(jwt);
-                long remainingSeconds = tokenProvider.getRemainingSeconds(jwt);
-
-                // 1. Blacklist the access token in Redis
-                if (remainingSeconds > 0) {
-                    redisTokenService.blacklistAccessToken(jwt, remainingSeconds);
-                }
-
-                // 2. Remove refresh token from Redis
-                redisTokenService.deleteRefreshToken(userId.toString());
-            }
-        }
-        SecurityContextHolder.clearContext();
+    public void resendOtp(String email) {
+        if (!userRepository.existsByEmail(email)) throw new AppException(HttpStatus.NOT_FOUND, "User không tồn tại!");
+        String otp = String.format("%06d", new java.util.Random().nextInt(999999));
+        redisTokenService.saveOtp(email, otp, 300);
+        emailService.sendOtpEmail(email, otp);
     }
 }

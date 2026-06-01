@@ -60,17 +60,19 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
+                        // 1. Cho phép truy cập tự do toàn bộ API xác thực (đã gom gọn lại bằng /**)
+                        .requestMatchers("/api/v1/auth/**").permitAll()
 
+                        // 2. SỬA/THÊM: Cho phép truy cập giao diện Swagger UI công khai để test API
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**",
                                 "/swagger-ui.html",
                                 "/webjars/**",
-                                "/swagger-resources/**",
-                                "/configuration/**"
+                                "/swagger-resources/**"
                         ).permitAll()
 
+                        // 3. Tất cả các request khác bắt buộc phải đăng nhập (có token hợp lệ)
                         .anyRequest().authenticated()
                 );
 

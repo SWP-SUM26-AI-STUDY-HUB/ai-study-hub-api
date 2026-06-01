@@ -6,8 +6,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.ai_study_hub_api.common.ApiResponse;
+import vn.ai_study_hub_api.controller.request.RegisterRequest;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
 import vn.ai_study_hub_api.controller.request.LoginRequest;
@@ -67,5 +69,21 @@ public class AuthController {
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
         authService.logout(authHeader);
         return ApiResponse.success("Logout successful.");
+    }
+    @PostMapping("/register")
+    public ApiResponse<String> register(@Valid @RequestBody RegisterRequest request) {
+        authService.register(request);
+        return ApiResponse.success("Đăng ký thành công, check OTP trong console/log!");
+    }
+
+    @PostMapping("/verify")
+    public ApiResponse<String> verify(@RequestParam String email, @RequestParam String otp) {
+        authService.verifyAccount(email, otp);
+        return ApiResponse.success("Kích hoạt thành công!");
+    }
+    @PostMapping("/resend-otp")
+    public ResponseEntity<Void> resendOtp(@RequestParam String email) {
+        authService.resendOtp(email);
+        return ResponseEntity.ok().build();
     }
 }

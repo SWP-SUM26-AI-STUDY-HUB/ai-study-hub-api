@@ -31,8 +31,9 @@ public class UserServiceImpl implements UserService {
                         .email(user.getEmail())
                         .fullName(user.getFullName())
                         .avatarUrl(user.getAvatarUrl())
-                        .role(user.getRole())
-                        .status(user.getStatus())
+                        // SỬA Ở ĐÂY: Chuyển Enum sang String
+                        .role(user.getRole() != null ? user.getRole().name() : null)
+                        .status(user.getStatus() != null ? user.getStatus().name() : null)
                         .build())
                 .collect(Collectors.toList());
     }
