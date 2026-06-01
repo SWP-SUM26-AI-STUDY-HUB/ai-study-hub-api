@@ -62,13 +62,12 @@ public class AuthServiceImpl implements AuthService {
         redisTokenService.saveOtp(request.getEmail(), otp, 300);
         emailService.sendOtpEmail(request.getEmail(), otp);
     }
-
     @Override
     @Transactional
     public void verifyAccount(String email, String otp) {
         String storedOtp = redisTokenService.getOtp(email);
 
-        // Log để kiểm tra
+        // Log kiểm tra của ông giữ nguyên
         System.out.println("DEBUG >> Email nhận: " + email);
         System.out.println("DEBUG >> OTP nhận: " + otp);
         System.out.println("DEBUG >> Key đang tìm: otp:" + email);
@@ -80,6 +79,21 @@ public class AuthServiceImpl implements AuthService {
         if (!storedOtp.equals(otp)) {
             throw new AppException(HttpStatus.BAD_REQUEST, "OTP không khớp! Bạn nhập: " + otp + ", Hệ thống có: " + storedOtp);
         }
+
+        // ================= SỬA TẠI ĐÂY =================
+        // 1. Tìm thằng user trong DB lên bằng email
+        UserEntity user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng với email này!"));
+
+        // 2. Đổi trạng thái từ inactive sang active
+        user.setStatus(UserStatus.active);
+
+        // 3. Lưu lại xuống Database (Có @Transactional nên nó sẽ tự động commit)
+        userRepository.save(user);
+
+        // 4. Xóa luôn OTP trong Redis sau khi đã xác thực thành công để bảo mật (Optional nhưng nên làm)
+        redisTokenService.deleteOtp(email);
+        // ===============================================
     }
 
     @Override
