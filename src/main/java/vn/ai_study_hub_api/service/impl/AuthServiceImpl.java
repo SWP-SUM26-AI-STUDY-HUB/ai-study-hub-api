@@ -77,7 +77,7 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.BAD_REQUEST, "OTP không tồn tại! (Kiểm tra lại xem đã đăng ký chưa hoặc OTP đã hết hạn)");
         }
         if (!storedOtp.equals(otp)) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "OTP không khớp! Bạn nhập: " + otp + ", Hệ thống có: " + storedOtp);
+            throw new AppException(HttpStatus.BAD_REQUEST, "OTP không khớp! ");
         }
 
         // ================= SỬA TẠI ĐÂY =================
