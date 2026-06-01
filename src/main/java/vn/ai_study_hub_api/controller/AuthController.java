@@ -41,6 +41,19 @@ public class AuthController {
         return ApiResponse.success(response, "Login successful.");
     }
 
+    @GetMapping("/social-login")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Generate Google Auth URL\", description = \"Returns the Google OAuth2 authorization URL for the client to redirect the user")
+    public ApiResponse<String> socialAuth(
+            @Parameter(description = "Type of social login, expected 'google'", example = "google")
+            @RequestParam("login_type") String loginType){
+        String url = authService.generateAuthUrl(loginType.trim().toLowerCase());
+        return ApiResponse.<String>builder()
+                .data(url)
+                .message("Generate Google Auth URL successfully")
+                .build();
+    }
+
     /**
      * Renew an access token using a valid active refresh token.
      * @param request Refresh token payload
