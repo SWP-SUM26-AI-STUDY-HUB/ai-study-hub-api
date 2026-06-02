@@ -7,14 +7,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import vn.ai_study_hub_api.controller.request.*;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.AuthService;
-import vn.ai_study_hub_api.controller.request.LoginRequest;
-import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
-import vn.ai_study_hub_api.controller.request.RegisterRequest;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
 import vn.ai_study_hub_api.security.JwtTokenProvider;
 import vn.ai_study_hub_api.service.RedisTokenService;
@@ -209,5 +207,43 @@ public class AuthServiceImpl implements AuthService {
         String otp = String.format("%06d", new java.util.Random().nextInt(999999));
         redisTokenService.saveOtp(email, otp, 300);
         emailService.sendOtpEmail(email, otp);
+    }
+
+    @Override
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequest request) {
+        UserEntity user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Email address not found!"));
+
+        // Tạo chuỗi token ngẫu nhiên
+        String resetToken = java.util.UUID.randomUUID().toString();
+
+        // Lưu vào Redis với key dạng "reset:token_chuỗi", value là email, thời gian sống 15 phút (900 giây)
+        redisTokenService.saveOtp("reset:" + resetToken, user.getEmail(), 900);
+
+        // Gửi mail chứa token (hoặc chứa link) về cho user
+        emailService.sendResetPasswordEmail(user.getEmail(), resetToken);
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        String key = "reset:" + request.getToken();
+        String email = redisTokenService.getOtp(key);
+
+        // Kiểm tra token có hợp lệ hoặc hết hạn trong Redis chưa
+        if (email == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Reset token has expired or is invalid!");
+        }
+
+        UserEntity user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found!"));
+
+        // Mã hóa mật khẩu mới và cập nhật vào biến passwordHash của nhóm ông
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        // Đổi mật khẩu thành công thì xóa token trong Redis ngay lập tức
+        redisTokenService.deleteOtp(key);
     }
 }

@@ -1,8 +1,6 @@
 package vn.ai_study_hub_api.service;
 
-import vn.ai_study_hub_api.controller.request.LoginRequest;
-import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
-import vn.ai_study_hub_api.controller.request.RegisterRequest;
+import vn.ai_study_hub_api.controller.request.*;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
 
 public interface AuthService {
@@ -15,4 +13,7 @@ public interface AuthService {
     void register(RegisterRequest request);
     void verifyAccount(String email, String otp);
     void resendOtp(String email);
+    void forgotPassword(ForgotPasswordRequest request);
+    void resetPassword(ResetPasswordRequest request);
+
 }

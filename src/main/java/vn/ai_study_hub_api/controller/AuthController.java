@@ -6,13 +6,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import vn.ai_study_hub_api.common.ApiResponse;
-import vn.ai_study_hub_api.controller.request.RegisterRequest;
+import vn.ai_study_hub_api.controller.request.*;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
-import vn.ai_study_hub_api.controller.request.LoginRequest;
-import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
 
 
 @RestController
@@ -92,5 +91,26 @@ public class AuthController {
             @Parameter(description = "User email to resend OTP to") @RequestParam("email") String email) {
         authService.resendOtp(email);
         return ApiResponse.success("A new OTP code has been resent successfully.");
+    }
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Request password reset", description = "Validates email and sends a reset token via email")
+    public ApiResponse<String> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+
+        // Tham số 1 (Data): Chuỗi thông báo thành công cho mục "data"
+        // Tham số 2 (Message): Chuỗi hiển thị ở mục "message"
+        return ApiResponse.success("Reset password email has been sent successfully!", "Request processed successfully.");
+    }
+
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Reset password using token", description = "Validates the reset token and updates the user password")
+    public ApiResponse<String> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+
+        // Tham số 1 (Data): Chuỗi thông báo thành công cho mục "data"
+        // Tham số 2 (Message): Chuỗi hiển thị ở mục "message"
+        return ApiResponse.success("Password has been reset successfully!", "Request processed successfully.");
     }
 }
