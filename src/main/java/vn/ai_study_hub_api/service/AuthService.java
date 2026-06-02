@@ -9,6 +9,14 @@ public interface AuthService {
 
     LoginResponse login(LoginRequest request);
 
+
+
+    String generateAuthUrl(String loginType);
+
+
+    LoginResponse processGoogleLogin(String code);
+
+
     LoginResponse refreshToken(RefreshTokenRequest request);
 
     void logout(String authHeader);

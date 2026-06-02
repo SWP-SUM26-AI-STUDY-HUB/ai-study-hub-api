@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
+
 @Getter
 @AllArgsConstructor
 public class CustomUserDetails implements UserDetails {
@@ -57,21 +58,21 @@ public class CustomUserDetails implements UserDetails {
 
     @Override
     public boolean isAccountNonExpired() {
-        return true; // Tài khoản không bao giờ hết hạn
+        return true;
     }
 
     @Override
     public boolean isAccountNonLocked() {
-        return active; // Tài khoản bị khóa nếu status không phải là active
+        return active;
     }
 
     @Override
     public boolean isCredentialsNonExpired() {
-        return true; // Mật khẩu không bao giờ hết hạn
+        return true;
     }
 
     @Override
     public boolean isEnabled() {
-        return active; // Chỉ cho phép đăng nhập nếu status là active
+        return active;
     }
 }
