@@ -93,6 +93,7 @@ public class AuthServiceImpl implements AuthService {
 
         String email = (String) userInfo.get("email");
         String fullName = (String) userInfo.get("name");
+        String googleId = (String) userInfo.get("sub");
 
         if (!StringUtils.hasText(email)) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Failed to retrieve email from Google profile.");
@@ -104,6 +105,7 @@ public class AuthServiceImpl implements AuthService {
                     UserEntity newUser = new UserEntity();
                     newUser.setEmail(email);
                     newUser.setFullName(fullName != null ? fullName : "Google User");
+                    newUser.setGoogleId(googleId);
                     newUser.setRole("USER");
                     newUser.setStatus("active");
                     newUser.setPasswordHash(null);
