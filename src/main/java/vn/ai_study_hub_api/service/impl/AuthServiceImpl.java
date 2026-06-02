@@ -46,7 +46,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Email đã tồn tại!");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Email already exists!");
         }
 
         UserEntity user = UserEntity.builder()
@@ -63,42 +63,38 @@ public class AuthServiceImpl implements AuthService {
         redisTokenService.saveOtp(request.getEmail(), otp, 300);
         emailService.sendOtpEmail(request.getEmail(), otp);
     }
+
     @Override
     @Transactional
     public void verifyAccount(String email, String otp) {
         String storedOtp = redisTokenService.getOtp(email);
 
-        // Log kiểm tra của ông giữ nguyên
-        System.out.println("DEBUG >> Email nhận: " + email);
-        System.out.println("DEBUG >> OTP nhận: " + otp);
-        System.out.println("DEBUG >> Key đang tìm: otp:" + email);
-        System.out.println("DEBUG >> Giá trị Redis trả về: " + storedOtp);
+        // Debug logs translated to English
+        System.out.println("DEBUG >> Received Email: " + email);
+        System.out.println("DEBUG >> Received OTP: " + otp);
+        System.out.println("DEBUG >> Searching Key: otp:" + email);
+        System.out.println("DEBUG >> Redis Return Value: " + storedOtp);
 
         if (storedOtp == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "OTP không tồn tại! (Kiểm tra lại xem đã đăng ký chưa hoặc OTP đã hết hạn)");
+            throw new AppException(HttpStatus.BAD_REQUEST, "OTP does not exist! (Please check if you have registered or if the OTP has expired)");
         }
         if (!storedOtp.equals(otp)) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "OTP không khớp! ");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Invalid OTP! The code does not match.");
         }
 
-
         UserEntity user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng với email này!"));
-
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with this email!"));
 
         user.setStatus(UserStatus.active);
-
-
         userRepository.save(user);
-
-
         redisTokenService.deleteOtp(email);
-
     }
 
     @Override
     public void resendOtp(String email) {
-        if (!userRepository.existsByEmail(email)) throw new AppException(HttpStatus.NOT_FOUND, "User không tồn tại!");
+        if (!userRepository.existsByEmail(email)) {
+            throw new AppException(HttpStatus.NOT_FOUND, "User does not exist!");
+        }
         String otp = String.format("%06d", new java.util.Random().nextInt(999999));
         redisTokenService.saveOtp(email, otp, 300);
         emailService.sendOtpEmail(email, otp);

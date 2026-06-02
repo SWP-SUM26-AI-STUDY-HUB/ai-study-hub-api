@@ -6,9 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.util.UUID;
 
-/**
- * Response DTO representing non-sensitive user details.
- */
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

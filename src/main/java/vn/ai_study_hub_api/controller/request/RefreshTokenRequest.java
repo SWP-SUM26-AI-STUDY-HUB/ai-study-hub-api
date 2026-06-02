@@ -6,9 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Request DTO representing the refresh token payload for credential renewal.
- */
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -7,9 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.util.UUID;
 
-/**
- * Response DTO returning credentials and user profile information after successful authentication.
- */
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

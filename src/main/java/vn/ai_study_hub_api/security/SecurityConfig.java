@@ -15,10 +15,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-/**
- * Spring Security Configuration class.
- * Secures REST endpoints and registers the JWT stateless authentication filter.
- */
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {

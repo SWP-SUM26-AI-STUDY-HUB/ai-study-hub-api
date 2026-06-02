@@ -13,10 +13,6 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
-/**
- * Custom UserDetails implementation holding authenticated UserEntity details.
- * Lớp này giúp Spring Security hiểu được thông tin user của hệ thống chúng ta.
- */
 @Getter
 @AllArgsConstructor
 public class CustomUserDetails implements UserDetails {
@@ -27,12 +23,7 @@ public class CustomUserDetails implements UserDetails {
     private final boolean active;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    /**
-     * Map UserEntity vào instance của CustomUserDetails.
-     * Sử dụng Enum thay vì String để đảm bảo tính an toàn dữ liệu.
-     * * @param user Đối tượng UserEntity từ database
-     * @return CustomUserDetails đã được cấu hình
-     */
+
     public static CustomUserDetails build(UserEntity user) {
 
         String roleStr = user.getRole().name();

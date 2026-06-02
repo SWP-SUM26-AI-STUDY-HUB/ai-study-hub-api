@@ -14,10 +14,7 @@ import java.util.Date;
 import java.util.UUID;
 import javax.crypto.SecretKey;
 
-/**
- * Utility component for generating, parsing, and validating JSON Web Tokens (JWT).
- * Built using modern JJWT 0.12.x API.
- */
+
 @Component
 public class JwtTokenProvider {
 
@@ -42,21 +39,13 @@ public class JwtTokenProvider {
         }
     }
 
-    /**
-     * Generate an Access Token for an authenticated user.
-     * @param authentication Authentication principal details
-     * @return Generated JWT string
-     */
+
     public String generateAccessToken(Authentication authentication) {
         CustomUserDetails userPrincipal = (CustomUserDetails) authentication.getPrincipal();
         return generateAccessToken(userPrincipal);
     }
 
-    /**
-     * Generate an Access Token for a CustomUserDetails instance.
-     * @param userPrincipal User detail principal
-     * @return Generated JWT string
-     */
+
     public String generateAccessToken(CustomUserDetails userPrincipal) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtAccessExpirationMs);
@@ -73,11 +62,7 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    /**
-     * Generate a Refresh Token for a CustomUserDetails instance.
-     * @param userPrincipal User detail principal
-     * @return Generated JWT string
-     */
+
     public String generateRefreshToken(CustomUserDetails userPrincipal) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtRefreshExpirationMs);
@@ -91,11 +76,7 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    /**
-     * Extract username (email) from JWT token.
-     * @param token JWT token
-     * @return User email string
-     */
+
     public String getEmailFromJwt(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(signingKey)
@@ -106,11 +87,7 @@ public class JwtTokenProvider {
         return claims.getSubject();
     }
 
-    /**
-     * Extract user UUID from JWT token.
-     * @param token JWT token
-     * @return User UUID
-     */
+
     public UUID getUserIdFromJwt(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(signingKey)
@@ -121,12 +98,7 @@ public class JwtTokenProvider {
         return UUID.fromString(claims.get("userId", String.class));
     }
 
-    /**
-     * Get remaining lifetime of the token in seconds.
-     * Used for blacklisting Access Tokens with precise TTL.
-     * @param token Access token
-     * @return Remaining lifetime in seconds
-     */
+
     public long getRemainingSeconds(String token) {
         try {
             Claims claims = Jwts.parser()
@@ -143,11 +115,7 @@ public class JwtTokenProvider {
         }
     }
 
-    /**
-     * Validate the JWT token's signature, format, and expiration.
-     * @param authToken Auth token string
-     * @return true if valid, false otherwise
-     */
+
     public boolean validateToken(String authToken) {
         try {
             Jwts.parser()

@@ -9,9 +9,7 @@ import vn.ai_study_hub_api.service.UserService;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Service implementation for managing users.
- */
+
 @Service
 public class UserServiceImpl implements UserService {
 
