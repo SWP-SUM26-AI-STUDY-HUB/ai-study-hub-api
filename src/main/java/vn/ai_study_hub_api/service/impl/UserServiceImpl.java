@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.ai_study_hub_api.controller.response.UserResponse;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UserService;
 
@@ -57,8 +59,8 @@ public class UserServiceImpl implements UserService {
                     newUser.setFullName(fullName != null ? fullName : "Google User");
                     newUser.setAvatarUrl(avatarUrl);
                     newUser.setGoogleId(googleId);
-                    newUser.setRole("user");
-                    newUser.setStatus("active");
+                    newUser.setRole(UserRole.user);
+                    newUser.setStatus(UserStatus.active);
                     return userRepository.save(newUser);
                 });
     }

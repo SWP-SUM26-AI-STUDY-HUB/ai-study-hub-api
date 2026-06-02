@@ -108,16 +108,16 @@ public class AuthServiceImpl implements AuthService {
                     newUser.setEmail(email);
                     newUser.setFullName(fullName != null ? fullName : "Google User");
                     newUser.setGoogleId(googleId);
-                    newUser.setRole("USER");
-                    newUser.setStatus("active");
+                    newUser.setRole(UserRole.user);
+                    newUser.setStatus(UserStatus.active);
                     newUser.setPasswordHash(null);
                     return userRepository.save(newUser);
                 });
 
-        if ("banned".equalsIgnoreCase(user.getStatus())) {
+        if (user.getStatus().equals(UserStatus.banned)) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
-        if ("inactive".equalsIgnoreCase(user.getStatus())) {
+        if (user.getStatus().equals(UserStatus.inactive)) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account is currently inactive.");
         }
 
@@ -138,9 +138,6 @@ public class AuthServiceImpl implements AuthService {
                 .build();
     }
 
-    /**
-     * Gửi request POST sang Google để đổi Authorization Code lấy Google Access Token
-     */
     private String exchangeCodeForGoogleToken(String code) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("code", code);
@@ -166,9 +163,6 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-    /**
-     * Gửi request GET kèm Access Token để lấy thông tin chi tiết người dùng từ Google
-     */
     private Map<String, Object> fetchGoogleUserInfo(String googleAccessToken) {
         try {
             return restClient.get()
@@ -309,12 +303,6 @@ public class AuthServiceImpl implements AuthService {
     public void verifyAccount(String email, String otp) {
         String storedOtp = redisTokenService.getOtp(email);
 
-        // Debug logs
-        System.out.println("DEBUG >> Received Email: " + email);
-        System.out.println("DEBUG >> Received OTP: " + otp);
-        System.out.println("DEBUG >> Searching Key: otp:" + email);
-        System.out.println("DEBUG >> Redis Return Value: " + storedOtp);
-
         if (storedOtp == null) {
             throw new AppException(HttpStatus.BAD_REQUEST, "OTP does not exist! (Please check if you have registered or if the OTP has expired)");
         }
@@ -325,7 +313,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with this email!"));
 
-        user.setStatus(UserStatus.active); // Đổi trạng thái sang ACTIVE ngon lành
+        user.setStatus(UserStatus.active);
         userRepository.save(user);
         redisTokenService.deleteOtp(email);
     }
@@ -339,5 +327,4 @@ public class AuthServiceImpl implements AuthService {
         redisTokenService.saveOtp(email, otp, 300);
         emailService.sendOtpEmail(email, otp);
     }
-}
 }
