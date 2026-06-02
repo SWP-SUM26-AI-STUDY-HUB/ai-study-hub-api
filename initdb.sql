@@ -164,6 +164,10 @@ CREATE TABLE "notifications" (
   "created_at" timestamp DEFAULT (now())
 );
 
+ALTER TABLE "documents" ADD COLUMN "summary" TEXT;
+
+ALTER TABLE "documents" ADD COLUMN "description" TEXT;
+
 ALTER TABLE "users" ADD FOREIGN KEY ("plan_id") REFERENCES "storage_plans" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "invoices" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
