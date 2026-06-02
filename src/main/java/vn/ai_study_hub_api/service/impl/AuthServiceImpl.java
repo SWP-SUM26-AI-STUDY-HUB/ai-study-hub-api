@@ -55,6 +55,7 @@ public class AuthServiceImpl implements AuthService {
                 .fullName(request.getFullName())
                 .status(UserStatus.inactive)
                 .role(UserRole.user)
+                .planId(1)
                 .build();
         userRepository.save(user);
 
