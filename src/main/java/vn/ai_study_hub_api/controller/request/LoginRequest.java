@@ -7,9 +7,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Request DTO representing user login credentials.
- */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

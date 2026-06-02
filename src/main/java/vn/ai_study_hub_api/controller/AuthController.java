@@ -13,9 +13,6 @@ import vn.ai_study_hub_api.controller.response.LoginResponse;
 import vn.ai_study_hub_api.controller.request.LoginRequest;
 import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
 
-/**
- * Controller exposing authentication endpoints: Login, Refresh Token, and Logout.
- */
 @RestController
 @RequestMapping("/api/v1/auth")
 @Tag(name = "Authentication", description = "Endpoints for user authentication management")
@@ -27,7 +24,6 @@ public class AuthController {
     public AuthController(AuthService authService) {
         this.authService = authService;
     }
-
 
     @PostMapping("/login")
     @ResponseStatus(HttpStatus.OK)
@@ -67,7 +63,6 @@ public class AuthController {
         return ApiResponse.success(response, "Token refreshed successfully.");
     }
 
-    
     @PostMapping("/logout")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Revoke session and log out", description = "Blacklists the current access token and deletes the matching refresh token in Redis")
