@@ -60,14 +60,14 @@ public class RedisTokenServiceImpl implements RedisTokenService {
     public void saveOtp(String email, String otp, long ttlSeconds) {
         String key = "otp:" + email;
         redisTemplate.opsForValue().set(key, otp, ttlSeconds, TimeUnit.SECONDS);
-        System.out.println("DEBUG SAVING: Key=" + key + " | Value=" + otp); // LOG NÀY RẤT QUAN TRỌNG
+        System.out.println("DEBUG SAVING: Key=" + key + " | Value=" + otp);
     }
 
     @Override
     public String getOtp(String email) {
         String key = "otp:" + email;
         String value = redisTemplate.opsForValue().get(key);
-        System.out.println("DEBUG GETTING: Key=" + key + " | FoundValue=" + value); // LOG NÀY RẤT QUAN TRỌNG
+        System.out.println("DEBUG GETTING: Key=" + key + " | FoundValue=" + value);
         return value;
     }
 

@@ -34,13 +34,10 @@ public class CustomUserDetails implements UserDetails {
      * @return CustomUserDetails đã được cấu hình
      */
     public static CustomUserDetails build(UserEntity user) {
-        // Lấy vai trò (Role) từ Enum và gán tiền tố ROLE_ cho Spring Security
-        // .name() trả về giá trị kiểu String của Enum
+
         String roleStr = user.getRole().name();
         GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr.toUpperCase());
 
-        // Kiểm tra trạng thái (Status) bằng cách so sánh trực tiếp Enum
-        // Trả về true nếu status là 'active'
         boolean isActive = UserStatus.active.equals(user.getStatus());
 
         return new CustomUserDetails(

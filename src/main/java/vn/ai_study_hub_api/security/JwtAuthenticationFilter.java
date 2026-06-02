@@ -43,7 +43,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = getJwtFromRequest(request);
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                // Verify if token has been blacklisted in Redis (e.g. user logged out)
+
                 if (redisTokenService.isAccessTokenBlacklisted(jwt)) {
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     response.setContentType("application/json");

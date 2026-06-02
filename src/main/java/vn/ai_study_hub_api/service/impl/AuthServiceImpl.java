@@ -81,20 +81,19 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.BAD_REQUEST, "OTP không khớp! ");
         }
 
-        // ================= SỬA TẠI ĐÂY =================
-        // 1. Tìm thằng user trong DB lên bằng email
+
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng với email này!"));
 
-        // 2. Đổi trạng thái từ inactive sang active
+
         user.setStatus(UserStatus.active);
 
-        // 3. Lưu lại xuống Database (Có @Transactional nên nó sẽ tự động commit)
+
         userRepository.save(user);
 
-        // 4. Xóa luôn OTP trong Redis sau khi đã xác thực thành công để bảo mật (Optional nhưng nên làm)
+
         redisTokenService.deleteOtp(email);
-        // ===============================================
+
     }
 
     @Override

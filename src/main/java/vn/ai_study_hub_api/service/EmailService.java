@@ -10,7 +10,6 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
-    // Sử dụng Constructor Injection thay vì @Autowired trên field
     @Autowired
     public EmailService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
