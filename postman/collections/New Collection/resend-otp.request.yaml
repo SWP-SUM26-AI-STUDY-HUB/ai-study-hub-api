@@ -1,9 +1,0 @@
-$kind: http-request
-url: http://localhost:8080/api/v1/auth/resend-otp?email=vohoangquocminh2005@gmail.com
-method: POST
-queryParams:
-  email: vohoangquocminh2005@gmail.com
-body:
-  type: json
-  content: ""
-order: 3802254779084136
