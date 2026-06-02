@@ -11,9 +11,7 @@ import vn.ai_study_hub_api.service.UserService;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * Service implementation for managing users and OAuth2 account provisioning.
- */
+
 @Service
 public class UserServiceImpl implements UserService {
 
@@ -33,8 +31,9 @@ public class UserServiceImpl implements UserService {
                         .email(user.getEmail())
                         .fullName(user.getFullName())
                         .avatarUrl(user.getAvatarUrl())
-                        .role(user.getRole())
-                        .status(user.getStatus())
+
+                        .role(user.getRole() != null ? user.getRole().name() : null)
+                        .status(user.getStatus() != null ? user.getStatus().name() : null)
                         .build())
                 .collect(Collectors.toList());
     }

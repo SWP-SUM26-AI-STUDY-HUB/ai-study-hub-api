@@ -6,7 +6,6 @@ public interface RedisTokenService {
 
     void saveRefreshToken(String userId, String refreshToken, long ttlSeconds);
 
-
     String getRefreshToken(String userId);
 
 
@@ -17,4 +16,7 @@ public interface RedisTokenService {
 
 
     boolean isAccessTokenBlacklisted(String accessToken);
+    void saveOtp(String email, String otp, long ttlSeconds);
+    String getOtp(String email);
+    void deleteOtp(String email);
 }

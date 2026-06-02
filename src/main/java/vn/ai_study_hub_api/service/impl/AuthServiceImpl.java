@@ -15,22 +15,24 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.request.LoginRequest;
 import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
+import vn.ai_study_hub_api.controller.request.RegisterRequest;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
 import vn.ai_study_hub_api.security.JwtTokenProvider;
 import vn.ai_study_hub_api.service.RedisTokenService;
+import vn.ai_study_hub_api.service.EmailService;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Service implementation managing user login, token refresh, logout routines, and Google OAuth2.
- */
+
 @Service
 public class AuthServiceImpl implements AuthService {
 
@@ -38,6 +40,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final RedisTokenService redisTokenService;
+    private final EmailService emailService; // ◄ GIỮ NGUYÊN: Thêm EmailService cho luồng OTP
 
     // Khởi tạo hằng số RestClient an toàn
     private final RestClient restClient = RestClient.create();
@@ -59,11 +62,13 @@ public class AuthServiceImpl implements AuthService {
     public AuthServiceImpl(UserRepository userRepository,
                            PasswordEncoder passwordEncoder,
                            JwtTokenProvider tokenProvider,
-                           RedisTokenService redisTokenService) {
+                           RedisTokenService redisTokenService,
+                           EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenProvider = tokenProvider;
         this.redisTokenService = redisTokenService;
+        this.emailService = emailService;
     }
 
     @Override
@@ -190,10 +195,12 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Invalid email or password.");
         }
 
-        if ("banned".equalsIgnoreCase(user.getStatus())) {
+
+        // Account status checks
+        if (UserStatus.banned == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
-        if ("inactive".equalsIgnoreCase(user.getStatus())) {
+        if (UserStatus.inactive == user.getStatus() || "inactive".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account is currently inactive.");
         }
 
@@ -234,7 +241,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
 
-        if ("banned".equalsIgnoreCase(user.getStatus())) {
+        if (UserStatus.banned == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
 
@@ -274,4 +281,63 @@ public class AuthServiceImpl implements AuthService {
         }
         SecurityContextHolder.clearContext();
     }
+
+    @Override
+    @Transactional
+    public void register(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Email already exists!");
+        }
+
+        UserEntity user = UserEntity.builder()
+                .email(request.getEmail())
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .fullName(request.getFullName())
+                .status(UserStatus.inactive) // Mặc định chưa kích hoạt để bắt verify OTP
+                .role(UserRole.user)
+                .planId(1) // Mặc định gói số 1
+                .build();
+        userRepository.save(user);
+
+        String otp = String.format("%06d", new java.util.Random().nextInt(999999));
+        redisTokenService.saveOtp(request.getEmail(), otp, 300);
+        emailService.sendOtpEmail(request.getEmail(), otp);
+    }
+
+    @Override
+    @Transactional
+    public void verifyAccount(String email, String otp) {
+        String storedOtp = redisTokenService.getOtp(email);
+
+        // Debug logs
+        System.out.println("DEBUG >> Received Email: " + email);
+        System.out.println("DEBUG >> Received OTP: " + otp);
+        System.out.println("DEBUG >> Searching Key: otp:" + email);
+        System.out.println("DEBUG >> Redis Return Value: " + storedOtp);
+
+        if (storedOtp == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "OTP does not exist! (Please check if you have registered or if the OTP has expired)");
+        }
+        if (!storedOtp.equals(otp)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Invalid OTP! The code does not match.");
+        }
+
+        UserEntity user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with this email!"));
+
+        user.setStatus(UserStatus.active); // Đổi trạng thái sang ACTIVE ngon lành
+        userRepository.save(user);
+        redisTokenService.deleteOtp(email);
+    }
+
+    @Override
+    public void resendOtp(String email) {
+        if (!userRepository.existsByEmail(email)) {
+            throw new AppException(HttpStatus.NOT_FOUND, "User does not exist!");
+        }
+        String otp = String.format("%06d", new java.util.Random().nextInt(999999));
+        redisTokenService.saveOtp(email, otp, 300);
+        emailService.sendOtpEmail(email, otp);
+    }
+}
 }

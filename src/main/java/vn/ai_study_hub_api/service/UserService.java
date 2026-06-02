@@ -5,7 +5,6 @@ import vn.ai_study_hub_api.model.UserEntity;
 
 import java.util.List;
 
-
 public interface UserService {
 
 

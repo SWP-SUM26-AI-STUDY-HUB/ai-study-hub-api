@@ -5,11 +5,11 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import vn.ai_study_hub_api.model.UserRole;
+
 import java.util.UUID;
 
-/**
- * Response DTO returning credentials and user profile information after successful authentication.
- */
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -33,5 +33,5 @@ public class LoginResponse {
     private String fullName;
 
     @Schema(description = "User role in the system", example = "user")
-    private String role;
+    private UserRole role;
 }

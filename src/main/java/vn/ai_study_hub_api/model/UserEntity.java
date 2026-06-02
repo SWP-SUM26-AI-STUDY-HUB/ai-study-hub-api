@@ -2,10 +2,10 @@ package vn.ai_study_hub_api.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import java.time.LocalDate;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
 import java.util.UUID;
-
 
 @Entity
 @Table(name = "users")
@@ -32,13 +32,17 @@ public class UserEntity {
     @Column(name = "avatar_url", length = 255)
     private String avatarUrl;
 
-    @Column(name = "role", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "role", nullable = false, columnDefinition = "user_role")
     @Builder.Default
-    private String role = "user";
+    private UserRole role = UserRole.user;
 
-    @Column(name = "status", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "status", nullable = false, columnDefinition = "user_status")
     @Builder.Default
-    private String status = "active";
+    private UserStatus status = UserStatus.inactive;
 
     @Column(name = "plan_id")
     private Integer planId;
@@ -46,6 +50,10 @@ public class UserEntity {
     @Column(name = "storage_used")
     @Builder.Default
     private Long storageUsed = 0L;
+
+    @Column(name = "is_storage_counted")
+    @Builder.Default
+    private Boolean isStorageCounted = false;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -58,32 +66,4 @@ public class UserEntity {
 
     @Column(name = "plan_expires_at")
     private LocalDateTime planExpiresAt;
-
-    public UserRole getRoleEnum() {
-        return role == null ? null : UserRole.valueOf(role.toLowerCase());
-    }
-
-    /**
-     * Set the UserRole enum.
-     * @param role UserRole enum
-     */
-    public void setRoleEnum(UserRole role) {
-        this.role = role == null ? null : role.name().toLowerCase();
-    }
-
-    /**
-     * Get the UserStatus enum representation.
-     * @return UserStatus enum
-     */
-    public UserStatus getStatusEnum() {
-        return status == null ? null : UserStatus.valueOf(status.toLowerCase());
-    }
-
-    /**
-     * Set the UserStatus enum.
-     * @param status UserStatus enum
-     */
-    public void setStatusEnum(UserStatus status) {
-        this.status = status == null ? null : status.name().toLowerCase();
-    }
 }

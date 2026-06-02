@@ -6,10 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
-/**
- * Generic response wrapper for unified REST API responses.
- * @param <T> Type of response data
- */
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -23,13 +20,7 @@ public class ApiResponse<T> {
     @Builder.Default
     private LocalDateTime timestamp = LocalDateTime.now();
 
-    /**
-     * Helper to build a successful response with data.
-     * @param data Payload data
-     * @param message Success message
-     * @param <T> Data type
-     * @return ApiResponse instance
-     */
+
     public static <T> ApiResponse<T> success(T data, String message) {
         return ApiResponse.<T>builder()
                 .success(true)
@@ -38,12 +29,7 @@ public class ApiResponse<T> {
                 .build();
     }
 
-    /**
-     * Helper to build a successful response without data.
-     * @param message Success message
-     * @param <T> Data type
-     * @return ApiResponse instance
-     */
+
     public static <T> ApiResponse<T> success(String message) {
         return ApiResponse.<T>builder()
                 .success(true)
@@ -52,12 +38,6 @@ public class ApiResponse<T> {
                 .build();
     }
 
-    /**
-     * Helper to build an error response.
-     * @param message Error message
-     * @param <T> Data type
-     * @return ApiResponse instance
-     */
     public static <T> ApiResponse<T> error(String message) {
         return ApiResponse.<T>builder()
                 .success(false)

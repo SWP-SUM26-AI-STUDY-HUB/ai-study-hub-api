@@ -6,6 +6,9 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
@@ -23,10 +26,11 @@ public class CustomUserDetails implements UserDetails {
 
 
     public static CustomUserDetails build(UserEntity user) {
-        String roleStr = user.getRole().toUpperCase();
-        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr);
-        
-        boolean isActive = "active".equalsIgnoreCase(user.getStatus());
+
+        String roleStr = user.getRole().name();
+        GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr.toUpperCase());
+
+        boolean isActive = UserStatus.active.equals(user.getStatus());
 
         return new CustomUserDetails(
                 user.getId(),

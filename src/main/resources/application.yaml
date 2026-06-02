@@ -21,6 +21,18 @@ spring:
           google:
             user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: tanhai21052005@gmail.com
+    password: kqxq masa xgam mals
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 management:
   endpoints:
     web:
@@ -31,7 +43,7 @@ logging:
   level:
     root: INFO
     web: INFO
-
+    vn.ai_study_hub_api: DEBUG # Thêm dòng này để log ra các bước xử lý của bạn
 app:
   jwt:
     secret: ${JWT_SECRET:9a4f2c8d3e7b1a5c6d8e0f9b8c7a6d5e4f3c2b1a0d9e8f7a6b5c4d3e2f1a0b9c}
