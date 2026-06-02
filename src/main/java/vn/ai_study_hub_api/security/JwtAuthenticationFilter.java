@@ -15,10 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import vn.ai_study_hub_api.service.RedisTokenService;
 import java.io.IOException;
 
-/**
- * Filter that intercepts incoming HTTP requests to validate JWT token,
- * check Redis blacklist, and load user context into Spring Security Context.
- */
+
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
@@ -43,7 +40,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = getJwtFromRequest(request);
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                // Verify if token has been blacklisted in Redis (e.g. user logged out)
                 if (redisTokenService.isAccessTokenBlacklisted(jwt)) {
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                     response.setContentType("application/json");
