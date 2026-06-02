@@ -85,10 +85,8 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public LoginResponse processGoogleLogin(String code) {
-        // 1. Đổi "code" lấy Google Access Token
         String googleAccessToken = exchangeCodeForGoogleToken(code);
 
-        // 2. Sử dụng Google Access Token để lấy thông tin Email, Name từ Google
         Map<String, Object> userInfo = fetchGoogleUserInfo(googleAccessToken);
 
         String email = (String) userInfo.get("email");
@@ -99,7 +97,6 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.BAD_REQUEST, "Failed to retrieve email from Google profile.");
         }
 
-        // 3. Tìm tài khoản trong Database hoặc tự động tạo mới
         UserEntity user = userRepository.findByEmail(email)
                 .orElseGet(() -> {
                     UserEntity newUser = new UserEntity();
@@ -112,7 +109,6 @@ public class AuthServiceImpl implements AuthService {
                     return userRepository.save(newUser);
                 });
 
-        // 4. Kiểm tra trạng thái tài khoản
         if ("banned".equalsIgnoreCase(user.getStatus())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
@@ -120,12 +116,10 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account is currently inactive.");
         }
 
-        // 5. Cấp cặp JWT Token của hệ thống (Access & Refresh Token)
         CustomUserDetails userDetails = CustomUserDetails.build(user);
         String accessToken = tokenProvider.generateAccessToken(userDetails);
         String refreshToken = tokenProvider.generateRefreshToken(userDetails);
 
-        // Lưu trữ Refresh Token vào Redis
         long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
         redisTokenService.saveRefreshToken(user.getId().toString(), refreshToken, ttlSeconds);
 

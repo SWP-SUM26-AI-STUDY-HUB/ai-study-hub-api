@@ -17,10 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import vn.ai_study_hub_api.service.impl.GoogleOAuth2UserServiceImpl;
 import static org.springframework.security.config.Customizer.withDefaults;
 
-/**
- * Spring Security Configuration class.
- * Secures REST endpoints and registers the JWT stateless authentication filter.
- */
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {

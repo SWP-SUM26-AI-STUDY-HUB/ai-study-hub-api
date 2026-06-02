@@ -23,21 +23,16 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
                                         Authentication authentication) throws IOException {
 
-        // 1. Lấy email từ đối tượng Google trả về
         OAuth2User oAuth2User = (OAuth2User) authentication.getPrincipal();
         String email = oAuth2User.getAttribute("email");
 
-        // 2. Lấy thông tin user từ DB để tạo đối tượng CustomUserDetails cho JwtTokenProvider
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // 3. Chuyển đổi sang CustomUserDetails (Bạn cần class này để dùng generateAccessToken)
         CustomUserDetails userPrincipal = CustomUserDetails.build(user);
 
-        // 4. Dùng JwtTokenProvider tạo token
         String accessToken = tokenProvider.generateAccessToken(userPrincipal);
 
-        // 5. Redirect về Frontend kèm token trên URL
         String targetUrl = "http://localhost:4300/auth/callback?token=" + accessToken;
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
     }

@@ -53,14 +53,13 @@ public class UserServiceImpl implements UserService {
                     return userRepository.save(existingUser);
                 })
                 .orElseGet(() -> {
-                    // Nếu user mới, tạo một bản ghi UserEntity hoàn toàn mới
                     UserEntity newUser = new UserEntity();
                     newUser.setEmail(email);
                     newUser.setFullName(fullName != null ? fullName : "Google User");
                     newUser.setAvatarUrl(avatarUrl);
-                    newUser.setGoogleId(googleId); // LƯU Ý: Đây là trường quan trọng
-                    newUser.setRole("user");       // Gán role mặc định
-                    newUser.setStatus("active");   // Gán status mặc định
+                    newUser.setGoogleId(googleId);
+                    newUser.setRole("user");
+                    newUser.setStatus("active");
                     return userRepository.save(newUser);
                 });
     }

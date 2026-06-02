@@ -10,9 +10,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.UUID;
 
-/**
- * Custom UserDetails implementation holding authenticated UserEntity details.
- */
+
 @Getter
 @AllArgsConstructor
 public class CustomUserDetails implements UserDetails {
@@ -23,11 +21,7 @@ public class CustomUserDetails implements UserDetails {
     private final boolean active;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    /**
-     * Map UserEntity into CustomUserDetails instance.
-     * @param user UserEntity source
-     * @return CustomUserDetails mapped instance
-     */
+
     public static CustomUserDetails build(UserEntity user) {
         String roleStr = user.getRole().toUpperCase();
         GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr);

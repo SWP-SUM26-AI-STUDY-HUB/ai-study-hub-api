@@ -6,9 +6,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import vn.ai_study_hub_api.service.RedisTokenService;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Implementation of RedisTokenService using Spring's StringRedisTemplate.
- */
+
 @Service
 public class RedisTokenServiceImpl implements RedisTokenService {
 

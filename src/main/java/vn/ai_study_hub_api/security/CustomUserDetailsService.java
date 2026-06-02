@@ -9,9 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.repository.UserRepository;
 
-/**
- * Service implementation for loading user details by email during authentication.
- */
+
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
 
