@@ -40,7 +40,14 @@ buildNumber.properties
 bin/
 
 # ==========================================
-# 5. File Log & Thống kê hệ thống
+# 5. Thư mục Postman (Không up Collection/Environment)
+# ==========================================
+postman/
+*.postman_collection.json
+*.postman_environment.json
+
+# ==========================================
+# 6. File Log & Thống kê hệ thống
 # ==========================================
 *.log
 docker-compose.local.yaml
