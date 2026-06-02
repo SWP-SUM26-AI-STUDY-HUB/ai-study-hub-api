@@ -55,7 +55,6 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Invalid email or password.");
         }
 
-        // Account status checks
         if ("banned".equalsIgnoreCase(user.getStatus())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
