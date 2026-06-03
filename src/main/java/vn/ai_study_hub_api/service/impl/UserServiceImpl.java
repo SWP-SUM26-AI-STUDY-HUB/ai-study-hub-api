@@ -59,8 +59,8 @@ public class UserServiceImpl implements UserService {
                     newUser.setFullName(fullName != null ? fullName : "Google User");
                     newUser.setAvatarUrl(avatarUrl);
                     newUser.setGoogleId(googleId);
-                    newUser.setRole(UserRole.user);
-                    newUser.setStatus(UserStatus.active);
+                    newUser.setRole(UserRole.USER);
+                    newUser.setStatus(UserStatus.ACTIVE);
                     return userRepository.save(newUser);
                 });
     }

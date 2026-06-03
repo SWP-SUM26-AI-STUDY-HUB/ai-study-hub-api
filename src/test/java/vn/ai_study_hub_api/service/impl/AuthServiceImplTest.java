@@ -18,6 +18,9 @@ import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.security.JwtTokenProvider;
 import vn.ai_study_hub_api.service.RedisTokenService;
 
+import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
+
 import java.util.Optional;
 import java.util.UUID;
 
@@ -54,8 +57,8 @@ public class AuthServiceImplTest {
                 .email("testuser@example.com")
                 .passwordHash("encoded_password_hash")
                 .fullName("Test User")
-                .role("user")
-                .status("active")
+                .role(UserRole.USER)
+                .status(UserStatus.ACTIVE)
                 .build();
 
         validLoginRequest = new LoginRequest("testuser@example.com", "Password123!");
