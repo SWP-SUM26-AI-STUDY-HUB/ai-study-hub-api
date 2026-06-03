@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
+import vn.ai_study_hub_api.controller.request.*;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import vn.ai_study_hub_api.model.UserEntity;
@@ -40,7 +41,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final RedisTokenService redisTokenService;
-    private final EmailService emailService; // ◄ GIỮ NGUYÊN: Thêm EmailService cho luồng OTP
+    private final EmailService emailService;
 
     // Khởi tạo hằng số RestClient an toàn
     private final RestClient restClient = RestClient.create();
@@ -57,6 +58,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Value("${spring.security.oauth2.client.provider.google.user-info-uri}")
     private String googleUserInfoUri;
+
 
     @Autowired
     public AuthServiceImpl(UserRepository userRepository,
@@ -189,7 +191,6 @@ public class AuthServiceImpl implements AuthService {
             throw new AppException(HttpStatus.UNAUTHORIZED, "Invalid email or password.");
         }
 
-
         // Account status checks
         if (UserStatus.BANNED == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
@@ -202,6 +203,7 @@ public class AuthServiceImpl implements AuthService {
 
         String accessToken = tokenProvider.generateAccessToken(userDetails);
         String refreshToken = tokenProvider.generateRefreshToken(userDetails);
+
 
         long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
         redisTokenService.saveRefreshToken(user.getId().toString(), refreshToken, ttlSeconds);
@@ -244,6 +246,7 @@ public class AuthServiceImpl implements AuthService {
         String newAccessToken = tokenProvider.generateAccessToken(userDetails);
         String newRefreshToken = tokenProvider.generateRefreshToken(userDetails);
 
+
         long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
         redisTokenService.saveRefreshToken(user.getId().toString(), newRefreshToken, ttlSeconds);
 
@@ -266,9 +269,11 @@ public class AuthServiceImpl implements AuthService {
                 UUID userId = tokenProvider.getUserIdFromJwt(jwt);
                 long remainingSeconds = tokenProvider.getRemainingSeconds(jwt);
 
+
                 if (remainingSeconds > 0) {
                     redisTokenService.blacklistAccessToken(jwt, remainingSeconds);
                 }
+
 
                 redisTokenService.deleteRefreshToken(userId.toString());
             }
@@ -326,5 +331,35 @@ public class AuthServiceImpl implements AuthService {
         String otp = String.format("%06d", new java.util.Random().nextInt(999999));
         redisTokenService.saveOtp(email, otp, 300);
         emailService.sendOtpEmail(email, otp);
+    }
+
+    @Override
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequest request) {
+        UserEntity user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Email address not found!"));
+
+        String resetToken = java.util.UUID.randomUUID().toString();
+        redisTokenService.saveOtp("reset:" + resetToken, user.getEmail(), 900);
+        emailService.sendResetPasswordEmail(user.getEmail(), resetToken);
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+
+        String email = redisTokenService.getOtp("reset:" + request.getToken());
+        if (email == null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Invalid or expired reset token!");
+        }
+
+
+        UserEntity user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found!"));
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        redisTokenService.deleteOtp("reset:" + request.getToken());
     }
 }
