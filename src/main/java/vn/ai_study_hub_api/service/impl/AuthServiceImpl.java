@@ -21,9 +21,7 @@ import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import java.util.UUID;
 
-/**
- * Service implementation managing user login, token refresh, registration, and logout routines.
- */
+
 @Service
 public class AuthServiceImpl implements AuthService {
 
@@ -31,7 +29,7 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final RedisTokenService redisTokenService;
-    private final EmailService emailService; // ◄ GIỮ NGUYÊN: Thêm EmailService cho luồng OTP
+    private final EmailService emailService;
 
     @Autowired
     public AuthServiceImpl(UserRepository userRepository,
@@ -73,7 +71,7 @@ public class AuthServiceImpl implements AuthService {
         String accessToken = tokenProvider.generateAccessToken(userDetails);
         String refreshToken = tokenProvider.generateRefreshToken(userDetails);
 
-        // Store refresh token in Redis with 7 days TTL (converted from MS to seconds)
+
         long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
         redisTokenService.saveRefreshToken(user.getId().toString(), refreshToken, ttlSeconds);
 
@@ -112,11 +110,10 @@ public class AuthServiceImpl implements AuthService {
 
         CustomUserDetails userDetails = CustomUserDetails.build(user);
 
-        // Rotate tokens
         String newAccessToken = tokenProvider.generateAccessToken(userDetails);
         String newRefreshToken = tokenProvider.generateRefreshToken(userDetails);
 
-        // Save new refresh token and expire the old one
+
         long ttlSeconds = tokenProvider.getJwtRefreshExpirationMs() / 1000;
         redisTokenService.saveRefreshToken(user.getId().toString(), newRefreshToken, ttlSeconds);
 
@@ -139,12 +136,12 @@ public class AuthServiceImpl implements AuthService {
                 UUID userId = tokenProvider.getUserIdFromJwt(jwt);
                 long remainingSeconds = tokenProvider.getRemainingSeconds(jwt);
 
-                // 1. Blacklist the access token in Redis
+
                 if (remainingSeconds > 0) {
                     redisTokenService.blacklistAccessToken(jwt, remainingSeconds);
                 }
 
-                // 2. Remove refresh token from Redis
+
                 redisTokenService.deleteRefreshToken(userId.toString());
             }
         }
@@ -162,9 +159,9 @@ public class AuthServiceImpl implements AuthService {
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .status(UserStatus.inactive) // Mặc định chưa kích hoạt để bắt verify OTP
+                .status(UserStatus.inactive)
                 .role(UserRole.user)
-                .planId(1) // Mặc định gói số 1
+                .planId(1)
                 .build();
         userRepository.save(user);
 
@@ -194,7 +191,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with this email!"));
 
-        user.setStatus(UserStatus.active); // Đổi trạng thái sang ACTIVE ngon lành
+        user.setStatus(UserStatus.active);
         userRepository.save(user);
         redisTokenService.deleteOtp(email);
     }
@@ -208,42 +205,33 @@ public class AuthServiceImpl implements AuthService {
         redisTokenService.saveOtp(email, otp, 300);
         emailService.sendOtpEmail(email, otp);
     }
-
     @Override
     @Transactional
     public void forgotPassword(ForgotPasswordRequest request) {
         UserEntity user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Email address not found!"));
 
-        // Tạo chuỗi token ngẫu nhiên
         String resetToken = java.util.UUID.randomUUID().toString();
-
-        // Lưu vào Redis với key dạng "reset:token_chuỗi", value là email, thời gian sống 15 phút (900 giây)
         redisTokenService.saveOtp("reset:" + resetToken, user.getEmail(), 900);
-
-        // Gửi mail chứa token (hoặc chứa link) về cho user
         emailService.sendResetPasswordEmail(user.getEmail(), resetToken);
     }
 
     @Override
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
-        String key = "reset:" + request.getToken();
-        String email = redisTokenService.getOtp(key);
 
-        // Kiểm tra token có hợp lệ hoặc hết hạn trong Redis chưa
+        String email = redisTokenService.getOtp("reset:" + request.getToken());
         if (email == null) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Reset token has expired or is invalid!");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Invalid or expired reset token!");
         }
+
 
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found!"));
 
-        // Mã hóa mật khẩu mới và cập nhật vào biến passwordHash của nhóm ông
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        // Đổi mật khẩu thành công thì xóa token trong Redis ngay lập tức
-        redisTokenService.deleteOtp(key);
+        redisTokenService.deleteOtp("reset:" + request.getToken());
     }
 }
