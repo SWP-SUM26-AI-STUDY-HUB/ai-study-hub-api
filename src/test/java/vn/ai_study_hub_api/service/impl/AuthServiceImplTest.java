@@ -31,7 +31,6 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 public class AuthServiceImplTest {
-
     @Mock
     private UserRepository userRepository;
 
@@ -77,13 +76,14 @@ public class AuthServiceImplTest {
         when(passwordEncoder.matches(validLoginRequest.getPassword(), mockUser.getPasswordHash())).thenReturn(true);
         when(tokenProvider.generateAccessToken(any(CustomUserDetails.class))).thenReturn("mocked_access_token");
         when(tokenProvider.generateRefreshToken(any(CustomUserDetails.class))).thenReturn("mocked_refresh_token");
-        when(tokenProvider.getJwtRefreshExpirationMs()).thenReturn(604800000L); // 7 days in ms
+        when(tokenProvider.getJwtRefreshExpirationMs()).thenReturn(604800000L);
 
         LoginResponse response = authService.login(validLoginRequest);
 
         assertNotNull(response, "LoginResponse should not be null on successful login");
         assertEquals("mocked_access_token", response.getAccessToken());
         assertEquals("mocked_refresh_token", response.getRefreshToken());
+
         assertEquals(mockUser.getId(), response.getId());
         assertEquals(mockUser.getEmail(), response.getEmail());
         assertEquals(mockUser.getFullName(), response.getFullName());
@@ -94,7 +94,7 @@ public class AuthServiceImplTest {
         verify(redisTokenService, times(1)).saveRefreshToken(
                 eq(mockUser.getId().toString()),
                 eq("mocked_refresh_token"),
-                eq(604800L) // 7 days in seconds
+                eq(604800L)
         );
     }
 
@@ -102,6 +102,7 @@ public class AuthServiceImplTest {
     void login_Failure_IncorrectPassword() {
         LoginRequest wrongPasswordRequest = new LoginRequest("testuser@example.com", "WrongPassword!");
         when(userRepository.findByEmail(wrongPasswordRequest.getEmail())).thenReturn(Optional.of(mockUser));
+
         when(passwordEncoder.matches(wrongPasswordRequest.getPassword(), mockUser.getPasswordHash())).thenReturn(false);
 
         AppException exception = assertThrows(AppException.class, () -> authService.login(wrongPasswordRequest));

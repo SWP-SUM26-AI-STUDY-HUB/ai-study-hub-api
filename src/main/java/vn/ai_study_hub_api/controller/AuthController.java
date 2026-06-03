@@ -12,6 +12,8 @@ import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.request.*;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
+import vn.ai_study_hub_api.controller.request.LoginRequest;
+import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
 
 
 @RestController
@@ -33,6 +35,29 @@ public class AuthController {
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         LoginResponse response = authService.login(request);
         return ApiResponse.success(response, "Login successful.");
+    }
+
+
+
+    @GetMapping("/social-login")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Generate Google Auth URL\", description = \"Returns the Google OAuth2 authorization URL for the client to redirect the user")
+    public ApiResponse<String> socialAuth(
+            @Parameter(description = "Type of social login, expected 'google'", example = "google")
+            @RequestParam("login_type") String loginType){
+        String url = authService.generateAuthUrl(loginType.trim().toLowerCase());
+        return ApiResponse.<String>builder()
+                .data(url)
+                .message("Generate Google Auth URL successfully")
+                .build();
+    }
+
+    @GetMapping("/google/callback")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Google OAuth2 Callback", description = "Exchange authorization code for JWT tokens")
+    public ApiResponse<LoginResponse> googleCallback(@RequestParam("code") String code) {
+        LoginResponse response = authService.processGoogleLogin(code);
+        return ApiResponse.success(response, "Google login successful.");
     }
 
 

@@ -164,6 +164,27 @@ CREATE TABLE "notifications" (
   "created_at" timestamp DEFAULT (now())
 );
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE "document_chunks" (
+  "id" uuid PRIMARY KEY,
+  "document_id" uuid,
+  "chunk_index" integer NOT NULL,
+  "content" text NOT NULL,
+  "embedding" vector(1536),
+  "page_number" integer,
+  "created_at" timestamp DEFAULT (now())
+);
+
+ALTER TABLE "document_chunks" ADD FOREIGN KEY ("document_id") REFERENCES "documents" ("id") ON DELETE CASCADE;
+
+CREATE INDEX document_chunks_embedding_hnsw_idx ON document_chunks USING hnsw (embedding vector_cosine_ops);
+
+
+ALTER TABLE "documents" ADD COLUMN "summary" TEXT;
+
+ALTER TABLE "documents" ADD COLUMN "description" TEXT;
+
 ALTER TABLE "users" ADD FOREIGN KEY ("plan_id") REFERENCES "storage_plans" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "invoices" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
