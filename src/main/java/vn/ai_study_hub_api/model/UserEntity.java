@@ -2,8 +2,7 @@ package vn.ai_study_hub_api.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import org.hibernate.annotations.ColumnTransformer;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -33,16 +32,22 @@ public class UserEntity {
     private String avatarUrl;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @ColumnTransformer(
+            read = "UPPER(role::text)",
+            write = "cast(LOWER(?) as user_role)"
+    )
     @Column(name = "role", nullable = false, columnDefinition = "user_role")
     @Builder.Default
-    private UserRole role = UserRole.user;
+    private UserRole role = UserRole.USER;
 
     @Enumerated(EnumType.STRING)
-    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @ColumnTransformer(
+            read = "UPPER(status::text)",
+            write = "cast(LOWER(?) as user_status)"
+    )
     @Column(name = "status", nullable = false, columnDefinition = "user_status")
     @Builder.Default
-    private UserStatus status = UserStatus.inactive;
+    private UserStatus status = UserStatus.INACTIVE;
 
     @Column(name = "plan_id")
     private Integer planId;

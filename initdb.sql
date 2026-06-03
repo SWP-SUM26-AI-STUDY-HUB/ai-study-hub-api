@@ -10,15 +10,19 @@ CREATE TYPE "user_status" AS ENUM (
   'overlimitstorage'
 );
 
+CREATE TYPE "document_visibility" AS ENUM (
+  'private',
+  'public'
+);
+
 CREATE TYPE "document_status" AS ENUM (
   'uploading',
   'processing',
   'pending',
-  'private',
-  'public',
   'rejected',
   'deleted',
-  'failed'
+  'failed',
+  'completed'
 );
 
 CREATE TYPE "invoice_status" AS ENUM (
@@ -86,6 +90,7 @@ CREATE TABLE "documents" (
   "file_type" varchar(20),
   "file_size_bytes" bigint NOT NULL,
   "status" document_status DEFAULT 'uploading',
+  "visibility" document_visibility DEFAULT 'private',
   "link_share" varchar(255) UNIQUE,
   "created_at" timestamp DEFAULT (now()),
   "updated_at" timestamp DEFAULT (now()),
@@ -175,6 +180,8 @@ CREATE TABLE "document_chunks" (
   "page_number" integer,
   "created_at" timestamp DEFAULT (now())
 );
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS visibility document_visibility DEFAULT 'private';
 
 ALTER TABLE "document_chunks" ADD FOREIGN KEY ("document_id") REFERENCES "documents" ("id") ON DELETE CASCADE;
 

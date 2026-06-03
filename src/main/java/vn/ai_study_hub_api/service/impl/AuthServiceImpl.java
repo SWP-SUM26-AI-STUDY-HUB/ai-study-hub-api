@@ -110,16 +110,16 @@ public class AuthServiceImpl implements AuthService {
                     newUser.setEmail(email);
                     newUser.setFullName(fullName != null ? fullName : "Google User");
                     newUser.setGoogleId(googleId);
-                    newUser.setRole(UserRole.user);
-                    newUser.setStatus(UserStatus.active);
+                    newUser.setRole(UserRole.USER);
+                    newUser.setStatus(UserStatus.ACTIVE);
                     newUser.setPasswordHash(null);
                     return userRepository.save(newUser);
                 });
 
-        if (user.getStatus().equals(UserStatus.banned)) {
+        if (user.getStatus().equals(UserStatus.BANNED)) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
-        if (user.getStatus().equals(UserStatus.inactive)) {
+        if (user.getStatus().equals(UserStatus.INACTIVE)) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account is currently inactive.");
         }
 
@@ -192,10 +192,10 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Account status checks
-        if (UserStatus.banned == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
+        if (UserStatus.BANNED == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
-        if (UserStatus.inactive == user.getStatus() || "inactive".equalsIgnoreCase(user.getStatus().name())) {
+        if (UserStatus.INACTIVE == user.getStatus() || "inactive".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account is currently inactive.");
         }
 
@@ -237,7 +237,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
 
-        if (UserStatus.banned == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
+        if (UserStatus.BANNED == user.getStatus() || "banned".equalsIgnoreCase(user.getStatus().name())) {
             throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned.");
         }
 
@@ -292,8 +292,8 @@ public class AuthServiceImpl implements AuthService {
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .fullName(request.getFullName())
-                .status(UserStatus.inactive) // Mặc định chưa kích hoạt để bắt verify OTP
-                .role(UserRole.user)
+                .status(UserStatus.INACTIVE) // Mặc định chưa kích hoạt để bắt verify OTP
+                .role(UserRole.USER)
                 .planId(1) // Mặc định gói số 1
                 .build();
         userRepository.save(user);
@@ -318,7 +318,7 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with this email!"));
 
-        user.setStatus(UserStatus.active);
+        user.setStatus(UserStatus.ACTIVE);
         userRepository.save(user);
         redisTokenService.deleteOtp(email);
     }

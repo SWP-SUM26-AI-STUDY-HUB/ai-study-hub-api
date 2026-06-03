@@ -3,6 +3,8 @@ package vn.ai_study_hub_api.repository;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserRole;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,5 +15,6 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     Optional<UserEntity> findByEmail(String email);
     boolean existsByEmail(String email);
+    List<UserEntity> findAllByRole(UserRole role);
     
 }

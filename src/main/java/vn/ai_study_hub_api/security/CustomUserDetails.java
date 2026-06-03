@@ -30,7 +30,7 @@ public class CustomUserDetails implements UserDetails {
         String roleStr = user.getRole().name();
         GrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + roleStr.toUpperCase());
 
-        boolean isActive = UserStatus.active.equals(user.getStatus());
+        boolean isActive = UserStatus.ACTIVE.equals(user.getStatus());
 
         return new CustomUserDetails(
                 user.getId(),
