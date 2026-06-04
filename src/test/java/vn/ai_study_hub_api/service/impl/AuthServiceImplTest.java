@@ -54,7 +54,6 @@ public class AuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        // SỬA: Chuyển đổi giá trị "user" và "active" từ String sang Enum chuẩn xác
         mockUser = UserEntity.builder()
                 .id(UUID.randomUUID())
                 .email("testuser@example.com")
@@ -91,8 +90,7 @@ public class AuthServiceImplTest {
         assertEquals(mockUser.getEmail(), response.getEmail());
         assertEquals(mockUser.getFullName(), response.getFullName());
 
-        // SỬA: LoginResponse trả về trường role dạng String nên cần sử dụng .name() từ Enum mockUser
-        assertEquals(mockUser.getRole().name(), response.getRole());
+        assertEquals(mockUser.getRole(), response.getRole());
 
         verify(redisTokenService, times(1)).saveRefreshToken(
                 eq(mockUser.getId().toString()),

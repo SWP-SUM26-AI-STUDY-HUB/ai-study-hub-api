@@ -37,14 +37,13 @@ public class UserServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        // Khởi tạo dữ liệu mock khớp hoàn toàn với cấu trúc Enum hiện tại của dự án
         mockUser1 = UserEntity.builder()
                 .id(UUID.randomUUID())
                 .email("alice@example.com")
                 .fullName("Alice Green")
                 .avatarUrl("http://example.com/alice.png")
-                .role(UserRole.user)       // SỬA: Đổi từ "user" thành Enum UserRole.user
-                .status(UserStatus.active) // SỬA: Đổi từ "active" thành Enum UserStatus.active
+                .role(UserRole.USER)
+                .status(UserStatus.ACTIVE)
                 .build();
 
         mockUser2 = UserEntity.builder()
@@ -52,8 +51,8 @@ public class UserServiceImplTest {
                 .email("bob@example.com")
                 .fullName("Bob Miller")
                 .avatarUrl("http://example.com/bob.png")
-                .role(UserRole.admin)      // SỬA: Đổi từ "admin" thành Enum UserRole.admin
-                .status(UserStatus.active) // SỬA: Đổi từ "active" thành Enum UserStatus.active
+                .role(UserRole.ADMIN)
+                .status(UserStatus.ACTIVE)
                 .build();
 
         mockUserList = new ArrayList<>();
