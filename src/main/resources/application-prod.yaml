@@ -5,8 +5,7 @@ spring:
   devtools:
     add-properties: true
   datasource:
-     #url: jdbc:postgresql://${DATABASE_URL:localhost:5432/postgres}
-    url: jdbc:postgresql://localhost:5432/aistudyhub
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/aistudyhub}
     username: ${DATABASE_USERNAME:dev}
     password: ${DATABASE_PASSWORD:password}
 
