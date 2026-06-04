@@ -21,35 +21,22 @@ spring:
           google:
             user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
 
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: tanhai21052005@gmail.com
-    password: kqxq masa xgam mals
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
-
-
   datasource:
-    url: jdbc:postgresql://localhost:5432/ai_study_hub
-    username: postgres
-    password: your_password
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/aistudyhub}
+    username: ${DATABASE_USERNAME:postgres}
+    password: ${DATABASE_PASSWORD:your_password}
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       timeout: 60000
 
 
   mail:
     host: smtp.gmail.com
     port: 587
-    username: tanhai21052005@gmail.com
-    password: kqxq masa xgam mals
+    username: ${MAIL_ACCOUNT:mail_account}
+    password: ${MAIL_PASSWORD:localhost}
     properties:
       mail:
         smtp:
