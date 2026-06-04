@@ -51,3 +51,4 @@ postman/
 # ==========================================
 *.log
 docker-compose.local.yaml
+mvnw

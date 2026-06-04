@@ -1,6 +1,7 @@
 package vn.ai_study_hub_api.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,7 @@ public class DocumentController {
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Upload a new document", description = "Saves document metadata, writes the file to a temporary file on disk, schedules asynchronous processing, and returns an immediate response.")
     public ApiResponse<DocumentUploadResponse> uploadDocument(
+            @Parameter(description = "The study document file to upload (PDF, DOCX, TXT, MD)", required = true)
             @RequestParam("file") MultipartFile file,
             @ModelAttribute DocumentUploadRequest request) {
         
