@@ -29,7 +29,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Documents", description = "Endpoints for study document management")
-public class DocumentController {
+public class    DocumentController {
 
     private final DocumentService documentService;
 
@@ -54,7 +54,7 @@ public class DocumentController {
         UUID userId = userDetails.getId();
 
         try {
-            // Step 2: Create a new document in the database with status = 'uploading'
+
             DocumentEntity document = documentService.initiateUpload(
                     file, 
                     request.getTitle(), 
@@ -66,15 +66,14 @@ public class DocumentController {
             UUID documentId = document.getId();
             String storagePath = document.getFileUrl();
 
-            // Copy MultipartFile input stream to a temporary local file 
             File tempFile = Files.createTempFile("upload-" + documentId, "-" + file.getOriginalFilename()).toFile();
             file.transferTo(tempFile);
             log.debug("Transferred MultipartFile to temporary file: {}", tempFile.getAbsolutePath());
 
-            // Trigger Step 6 & 7: Background processing (Upload, Presign, WebClient POST)
+
             documentService.processDocumentAsync(documentId, tempFile, storagePath, file.getContentType());
 
-            // Step 4: Return HTTP 200 immediately
+
             DocumentUploadResponse response = DocumentUploadResponse.builder()
                     .documentId(documentId.toString())
                     .status("uploading")
@@ -89,5 +88,24 @@ public class DocumentController {
             log.warn("Invalid upload arguments: {}", e.getMessage());
             throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+    @org.springframework.web.bind.annotation.GetMapping("/personal")
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.OK)
+    @io.swagger.v3.oas.annotations.Operation(
+            summary = "Get personal documents",
+            description = "Lấy danh sách tài liệu cá nhân chưa xóa của user hiện tại, chặn nếu vượt hạn mức lưu trữ"
+    )
+    public vn.ai_study_hub_api.common.ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> getPersonalDocuments(
+            @org.springframework.web.bind.annotation.RequestHeader("X-User-Id") String userIdStr,
+            @org.springframework.web.bind.annotation.RequestHeader("X-User-Status") String userStatus) {
+
+        java.util.UUID userId = java.util.UUID.fromString(userIdStr);
+
+
+        java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse> documents =
+                documentService.getPersonalDocuments(userId, userStatus);
+
+
+        return vn.ai_study_hub_api.common.ApiResponse.success(documents, "Personal documents retrieved successfully.");
     }
 }

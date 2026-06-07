@@ -13,4 +13,6 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
 
     @Query("SELECT d FROM DocumentEntity d JOIN FETCH d.uploader WHERE d.id = :id")
     Optional<DocumentEntity> findByIdWithUploader(@Param("id") UUID id);
+    @Query("SELECT d FROM DocumentEntity d WHERE d.uploader.id = :uploaderId AND d.deletedAt IS NULL")
+    java.util.List<DocumentEntity> findActiveDocumentsByUploaderId(@Param("uploaderId") UUID uploaderId);
 }
