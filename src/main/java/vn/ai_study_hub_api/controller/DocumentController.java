@@ -11,8 +11,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import vn.ai_study_hub_api.common.ApiResponse;
-import vn.ai_study_hub_api.controller.request.DocumentUploadRequest;
+import vn.ai_study_hub_api.controller.request.DocumentRequest;
 import vn.ai_study_hub_api.controller.response.DocumentUploadResponse;
+import vn.ai_study_hub_api.controller.response.DocumentResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -39,12 +40,11 @@ public class DocumentController {
     public ApiResponse<DocumentUploadResponse> uploadDocument(
             @Parameter(description = "The study document file to upload (PDF, DOCX, TXT, MD)", required = true)
             @RequestParam("file") MultipartFile file,
-            @ModelAttribute DocumentUploadRequest request) {
+            @ModelAttribute DocumentRequest request) {
         
         log.info("Received request to upload file: {} with metadata: title='{}', tags={}, visibility={}", 
-                file.getOriginalFilename(), request.getTitle(), request.getTagIds(), request.getVisibility());
+                file.getOriginalFilename(), request.getTitle(), request.getTags(), request.getVisibility());
 
-        // Get authenticated user ID
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
             log.error("Unauthorized upload attempt: user principal not found in SecurityContext");
@@ -54,11 +54,10 @@ public class DocumentController {
         UUID userId = userDetails.getId();
 
         try {
-            // Step 2: Create a new document in the database with status = 'uploading'
             DocumentEntity document = documentService.initiateUpload(
                     file, 
                     request.getTitle(), 
-                    request.getTagIds(), 
+                    request.getTags(), 
                     request.getDescription(), 
                     request.getVisibility(), 
                     userId
@@ -66,15 +65,12 @@ public class DocumentController {
             UUID documentId = document.getId();
             String storagePath = document.getFileUrl();
 
-            // Copy MultipartFile input stream to a temporary local file 
             File tempFile = Files.createTempFile("upload-" + documentId, "-" + file.getOriginalFilename()).toFile();
             file.transferTo(tempFile);
             log.debug("Transferred MultipartFile to temporary file: {}", tempFile.getAbsolutePath());
 
-            // Trigger Step 6 & 7: Background processing (Upload, Presign, WebClient POST)
             documentService.processDocumentAsync(documentId, tempFile, storagePath, file.getContentType());
 
-            // Step 4: Return HTTP 200 immediately
             DocumentUploadResponse response = DocumentUploadResponse.builder()
                     .documentId(documentId.toString())
                     .status("uploading")
@@ -87,6 +83,63 @@ public class DocumentController {
             throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to process uploaded file");
         } catch (IllegalArgumentException e) {
             log.warn("Invalid upload arguments: {}", e.getMessage());
+            throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @PutMapping(value = "/{id}", consumes = "application/json", produces = "application/json")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Update document metadata", description = "Updates title, description, visibility, and tags of an existing document. If visibility changes from private to public, triggers moderation.")
+    public ApiResponse<DocumentResponse> updateDocument(
+            @PathVariable("id") UUID id,
+            @RequestBody DocumentRequest request) {
+        
+        log.info("Received request to update document ID: {} with metadata: title='{}', tags={}, visibility={}", 
+                id, request.getTitle(), request.getTags(), request.getVisibility());
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized update attempt: user principal not found in SecurityContext");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        try {
+            DocumentEntity updatedDocument = documentService.updateDocument(
+                    id,
+                    request.getTitle(),
+                    request.getTags(),
+                    request.getDescription(),
+                    request.getVisibility(),
+                    userId
+            );
+
+            java.util.List<String> tagLabels = updatedDocument.getTags() != null
+                    ? updatedDocument.getTags().stream().map(vn.ai_study_hub_api.model.TagEntity::getLabel).toList()
+                    : java.util.Collections.emptyList();
+
+            DocumentResponse response = DocumentResponse.builder()
+                    .id(updatedDocument.getId())
+                    .title(updatedDocument.getTitle())
+                    .description(updatedDocument.getDescription())
+                    .fileUrl(updatedDocument.getFileUrl())
+                    .fileType(updatedDocument.getFileType())
+                    .fileSizeBytes(updatedDocument.getFileSizeBytes())
+                    .status(updatedDocument.getStatus().name())
+                    .visibility(updatedDocument.getVisibility().name())
+                    .tags(tagLabels)
+                    .createdAt(updatedDocument.getCreatedAt())
+                    .updatedAt(updatedDocument.getUpdatedAt())
+                    .build();
+
+            String message = (updatedDocument.getStatus() == vn.ai_study_hub_api.model.DocumentStatus.PENDING)
+                    ? "Your changes have been saved. The document has been submitted for admin approval"
+                    : "Document updated successfully";
+
+            return ApiResponse.success(response, message);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid update arguments: {}", e.getMessage());
             throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
     }

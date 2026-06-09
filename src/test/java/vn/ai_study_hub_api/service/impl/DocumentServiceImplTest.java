@@ -120,7 +120,7 @@ public class DocumentServiceImplTest {
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
-        when(tagRepository.findAllById(List.of(1))).thenReturn(List.of(mockTag));
+        when(tagRepository.findByLabel("Study")).thenReturn(Optional.of(mockTag));
         when(uploadProvider.generateStoragePath(any(UUID.class), any(UUID.class), anyString())).thenReturn("mock-user-id/mock-uuid.pdf");
         when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> {
             DocumentEntity savedDoc = invocation.getArgument(0);
@@ -129,7 +129,7 @@ public class DocumentServiceImplTest {
             return savedDoc;
         });
 
-        DocumentEntity result = documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId);
+        DocumentEntity result = documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId);
 
         assertNotNull(result);
         assertNotNull(result.getId());
@@ -143,7 +143,7 @@ public class DocumentServiceImplTest {
         assertEquals("Study", result.getTags().get(0).getLabel());
 
         verify(userRepository, times(1)).findById(userId);
-        verify(tagRepository, times(1)).findAllById(List.of(1));
+        verify(tagRepository, times(1)).findByLabel("Study");
         verify(uploadProvider, times(1)).generateStoragePath(eq(userId), any(UUID.class), eq("test.pdf"));
         verify(documentRepository, times(1)).save(any(DocumentEntity.class));
     }
@@ -160,7 +160,7 @@ public class DocumentServiceImplTest {
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, null, List.of(1), null, null, userId)
+                documentService.initiateUpload(file, null, List.of("Study"), null, null, userId)
         );
 
         verify(documentRepository, never()).save(any(DocumentEntity.class));
@@ -312,7 +312,7 @@ public class DocumentServiceImplTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+                documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload", exception.getMessage());
         verify(documentRepository, never()).save(any());
@@ -330,7 +330,7 @@ public class DocumentServiceImplTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+                documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Unsupported file format", exception.getMessage());
         verify(documentRepository, never()).save(any());
@@ -358,9 +358,153 @@ public class DocumentServiceImplTest {
         when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+                documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
         verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void initiateUpload_Success_WithNewAndExistingTags() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.pdf",
+                "application/pdf",
+                "pdf content".getBytes()
+        );
+
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L)
+                .maxAiRequestsPerDay(15)
+                .build();
+
+        TagEntity mockNewTag = TagEntity.builder()
+                .id(2)
+                .label("NewTag")
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
+        when(tagRepository.findByLabel("Study")).thenReturn(Optional.of(mockTag));
+        when(tagRepository.findByLabel("NewTag")).thenReturn(Optional.empty());
+        when(tagRepository.save(any(TagEntity.class))).thenReturn(mockNewTag);
+        when(uploadProvider.generateStoragePath(any(UUID.class), any(UUID.class), anyString())).thenReturn("mock-user-id/mock-uuid.pdf");
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocumentEntity result = documentService.initiateUpload(file, "My Custom Title", List.of("Study", "NewTag"), "Doc Description", DocumentVisibility.PUBLIC, userId);
+
+        assertNotNull(result);
+        assertEquals(2, result.getTags().size());
+        assertEquals("Study", result.getTags().get(0).getLabel());
+        assertEquals("NewTag", result.getTags().get(1).getLabel());
+    }
+
+    @Test
+    void initiateUpload_Failure_TagTooLong() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.pdf",
+                "application/pdf",
+                "pdf content".getBytes()
+        );
+
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L)
+                .maxAiRequestsPerDay(15)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+                documentService.initiateUpload(file, "My Custom Title", List.of("this-tag-is-extremely-long-and-exceeds-thirty-characters"), "Doc Description", DocumentVisibility.PUBLIC, userId)
+        );
+        assertEquals("Tag length cannot exceed 30 characters", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void updateDocument_Success() {
+        TagEntity mockNewTag = TagEntity.builder().id(2).label("UpdatedTag").build();
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(tagRepository.findByLabel("Study")).thenReturn(Optional.of(mockTag));
+        when(tagRepository.findByLabel("UpdatedTag")).thenReturn(Optional.empty());
+        when(tagRepository.save(any(TagEntity.class))).thenReturn(mockNewTag);
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocumentEntity result = documentService.updateDocument(documentId, "New Title", List.of("Study", "UpdatedTag"), "New Desc", null, userId);
+
+        assertNotNull(result);
+        assertEquals("New Title", result.getTitle());
+        assertEquals("New Desc", result.getDescription());
+        assertEquals(2, result.getTags().size());
+        assertEquals("Study", result.getTags().get(0).getLabel());
+        assertEquals("UpdatedTag", result.getTags().get(1).getLabel());
+    }
+
+    @Test
+    void updateDocument_VisibilityPrivateToPublic_TriggersModeration() {
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        UserEntity adminUser = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("admin@example.com")
+                .fullName("Admin User")
+                .role(UserRole.ADMIN)
+                .build();
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(userRepository.findAllByRole(UserRole.ADMIN)).thenReturn(List.of(adminUser));
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocumentEntity result = documentService.updateDocument(documentId, null, null, null, DocumentVisibility.PUBLIC, userId);
+
+        assertNotNull(result);
+        assertEquals(DocumentVisibility.PUBLIC, result.getVisibility());
+        assertEquals(DocumentStatus.PENDING, result.getStatus());
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+    }
+
+    @Test
+    void updateDocument_Failure_Unauthorized() {
+        UUID otherUserId = UUID.randomUUID();
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        assertThrows(vn.ai_study_hub_api.exception.AppException.class, () -> 
+                documentService.updateDocument(documentId, "New Title", null, null, null, otherUserId)
+        );
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void updateDocument_Failure_TagTooLong() {
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+                documentService.updateDocument(documentId, null, List.of("this-tag-is-extremely-long-and-exceeds-thirty-characters"), null, null, userId)
+        );
+        assertEquals("Tag length cannot exceed 30 characters", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void updateDocument_VisibilityPublicToPrivate_RemovesModeration() {
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setStatus(DocumentStatus.PENDING);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocumentEntity result = documentService.updateDocument(documentId, null, null, null, DocumentVisibility.PRIVATE, userId);
+
+        assertNotNull(result);
+        assertEquals(DocumentVisibility.PRIVATE, result.getVisibility());
+        assertEquals(DocumentStatus.COMPLETED, result.getStatus());
     }
 }

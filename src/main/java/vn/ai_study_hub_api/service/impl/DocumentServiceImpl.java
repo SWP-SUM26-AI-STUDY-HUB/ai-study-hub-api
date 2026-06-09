@@ -47,21 +47,43 @@ public class DocumentServiceImpl implements DocumentService {
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
 
+    private List<TagEntity> processTags(List<String> tagLabels) {
+        if (tagLabels == null || tagLabels.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        List<TagEntity> tagEntities = new java.util.ArrayList<>();
+        for (String label : tagLabels) {
+            if (label == null || label.trim().isEmpty()) {
+                continue;
+            }
+            String trimmedLabel = label.trim();
+            if (trimmedLabel.length() > 30) {
+                throw new IllegalArgumentException("Tag length cannot exceed 30 characters");
+            }
+            TagEntity tag = tagRepository.findByLabel(trimmedLabel)
+                    .orElseGet(() -> {
+                        TagEntity newTag = TagEntity.builder()
+                                .label(trimmedLabel)
+                                .build();
+                        return tagRepository.save(newTag);
+                    });
+            tagEntities.add(tag);
+        }
+        return tagEntities;
+    }
+
     @Override
     @Transactional
-    public DocumentEntity initiateUpload(MultipartFile file, String title, List<Integer> tagIds, String description, DocumentVisibility visibility, UUID userId) {
-        log.info("Initiating upload for file: {}, user: {}, tags: {}, title: {}, visibility: {}", file.getOriginalFilename(), userId, tagIds, title, visibility);
+    public DocumentEntity initiateUpload(MultipartFile file, String title, List<String> tags, String description, DocumentVisibility visibility, UUID userId) {
+        log.info("Initiating upload for file: {}, user: {}, tags: {}, title: {}, visibility: {}", file.getOriginalFilename(), userId, tags, title, visibility);
  
-        // Retrieve uploader user
         UserEntity uploader = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
-        // 1. Check user status
         if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
             throw new IllegalArgumentException("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload");
         }
 
-        // 2. Validate file format
         String originalFilename = file.getOriginalFilename();
         String fileExtension = getFileExtension(originalFilename).toLowerCase();
         List<String> allowedExtensions = List.of("pdf", "docx", "txt", "md");
@@ -69,7 +91,6 @@ public class DocumentServiceImpl implements DocumentService {
             throw new IllegalArgumentException("Unsupported file format");
         }
 
-        // 3. Validate storage limit
         Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
         StoragePlanEntity plan = storagePlanRepository.findById(planId)
                 .orElseThrow(() -> new IllegalArgumentException("Storage plan not found with ID: " + planId));
@@ -78,22 +99,18 @@ public class DocumentServiceImpl implements DocumentService {
             throw new IllegalArgumentException("Upload failed: file size exceeds remaining storage quota");
         }
 
-        // Retrieve and validate tags
-        List<TagEntity> tags = tagRepository.findAllById(tagIds);
+        List<TagEntity> tagEntities = processTags(tags);
  
-        // Pre-generate document ID for path consistency
         UUID documentId = UUID.randomUUID();
  
-        // Generate storage path using uploadProvider (which formats as /{user_uuid}/{document_uuid}.{fileExtension})
+
         String storagePath = uploadProvider.generateStoragePath(userId, documentId, originalFilename);
  
-        // Determine title
         String docTitle = (title != null && !title.trim().isEmpty()) ? title : originalFilename;
         if (docTitle == null || docTitle.isEmpty()) {
             docTitle = "untitled";
         }
  
-        // Create document entity
         DocumentEntity document = DocumentEntity.builder()
                 .id(documentId)
                 .uploader(uploader)
@@ -104,8 +121,52 @@ public class DocumentServiceImpl implements DocumentService {
                 .status(DocumentStatus.UPLOADING)
                 .description(description)
                 .visibility(visibility != null ? visibility : DocumentVisibility.PRIVATE)
-                .tags(tags)
+                .tags(tagEntities)
                 .build();
+
+        return documentRepository.save(document);
+    }
+
+    @Override
+    @Transactional
+    public DocumentEntity updateDocument(UUID documentId, String title, List<String> tags, String description, DocumentVisibility visibility, UUID userId) {
+        log.info("Updating document ID: {}, user: {}, tags: {}, title: {}, visibility: {}", documentId, userId, tags, title, visibility);
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
+
+        if (document.getUploader() == null || !document.getUploader().getId().equals(userId)) {
+            throw new vn.ai_study_hub_api.exception.AppException(org.springframework.http.HttpStatus.FORBIDDEN, "You are not authorized to update this document");
+        }
+
+        if (tags != null) {
+            List<TagEntity> tagEntities = processTags(tags);
+            document.setTags(tagEntities);
+        }
+
+        if (title != null && !title.trim().isEmpty()) {
+            document.setTitle(title.trim());
+        }
+        if (description != null) {
+            document.setDescription(description.trim());
+        }
+
+        if (visibility != null) {
+            DocumentVisibility oldVisibility = document.getVisibility();
+            if (DocumentVisibility.PRIVATE.equals(oldVisibility) && DocumentVisibility.PUBLIC.equals(visibility)) {
+                // Changing document privacy from private to public triggers moderation
+                document.setVisibility(DocumentVisibility.PUBLIC);
+                document.setStatus(DocumentStatus.PENDING);
+                documentRepository.save(document);
+                
+                createPendingApprovalNotifications(document);
+            } else {
+                document.setVisibility(visibility);
+                if (DocumentVisibility.PRIVATE.equals(visibility) && DocumentStatus.PENDING.equals(document.getStatus())) {
+                    document.setStatus(DocumentStatus.COMPLETED);
+                }
+            }
+        }
 
         return documentRepository.save(document);
     }
@@ -115,15 +176,12 @@ public class DocumentServiceImpl implements DocumentService {
     public void processDocumentAsync(UUID documentId, File tempFile, String storagePath, String contentType) {
         log.info("Running background processing for document ID: {}, storagePath: {}", documentId, storagePath);
         try {
-            // Upload file to the storage provider
             uploadProvider.upload(tempFile, storagePath, contentType);
             log.info("Successfully uploaded document {} to storage", documentId);
 
-            // Fetch the document to check its public/private visibility status
             DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
                     .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
 
-            // Update user storage usage
             UserEntity uploader = document.getUploader();
             if (uploader != null) {
                 long newStorageUsed = uploader.getStorageUsed() + document.getFileSizeBytes();
@@ -133,24 +191,19 @@ public class DocumentServiceImpl implements DocumentService {
             }
 
             if (DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
-                // Public status -> auto switch to pending status
                 document.setStatus(DocumentStatus.PENDING);
                 documentRepository.save(document);
                 log.info("Document ID {} is public. Status updated to PENDING.", documentId);
  
-                // Insert a notification for all admin users
                 createPendingApprovalNotifications(document);
             } else {
-                // Private status -> auto switch to processing status (normal flow)
                 document.setStatus(DocumentStatus.PROCESSING);
                 documentRepository.save(document);
                 log.info("Document ID {} is private. Status updated to PROCESSING.", documentId);
 
-                // Generate temporary access URL
                 String presignedUrl = uploadProvider.generatePresignedUrl(storagePath);
                 log.info("Generated temporary access URL for document {}: {}", documentId, presignedUrl);
 
-                // Send HTTP POST callback trigger to FastAPI
                 log.info("Triggering FastAPI processing for document: {}", documentId);
                 Map<String, String> payload = Map.of(
                         "document_id", documentId.toString(),
@@ -170,10 +223,8 @@ public class DocumentServiceImpl implements DocumentService {
 
         } catch (Exception e) {
             log.error("Failed to complete background processing for document ID: {}", documentId, e);
-            // If error, update status to 'failed'
             updateDocumentStatus(documentId, DocumentStatus.FAILED);
         } finally {
-            // Clean up the temporary file from the disk
             if (tempFile != null && tempFile.exists()) {
                 boolean deleted = tempFile.delete();
                 log.debug("Cleaned up temporary file: {}, success: {}", tempFile.getAbsolutePath(), deleted);
