@@ -63,16 +63,18 @@ public class SecurityConfig {
                         })
                 )
                 .authorizeHttpRequests(auth -> auth
-
-                        .requestMatchers("/api/v1/auth/**").permitAll()
-
-
+                        .requestMatchers("/api/v1/auth/profile").authenticated()
                         .requestMatchers(
                                 "/api/v1/auth/login",
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/verify",
+                                "/api/v1/auth/resend-otp",
+                                "/api/v1/auth/forgot-password",
+                                "/api/v1/auth/reset-password",
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/social-login",
-                                "/api/v1/auth/**",
+                                "/api/v1/auth/google/callback",
                                 "/api/internal/**",
                                 "/login/oauth2/**",
                                 "/swagger-ui/**",
