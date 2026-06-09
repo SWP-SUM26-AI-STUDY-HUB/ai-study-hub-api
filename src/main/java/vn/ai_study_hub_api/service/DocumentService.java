@@ -14,5 +14,13 @@ public interface DocumentService {
     void processDocumentAsync(UUID documentId, File tempFile, String storagePath, String contentType);
 
     void handleFastApiCallback(UUID documentId, String status, String summary);
-    List<DocumentResponse> getPersonalDocuments(UUID userId, String userStatus);
+
+    List<DocumentResponse> getPersonalDocuments(UUID userId);
+
+    /**
+     * Search public documents by keyword.
+     * Returns only active (COMPLETED), public, non-deleted documents matching
+     * the keyword in title, description, summary, or tag labels.
+     */
+    List<DocumentResponse> searchPublicDocuments(String keyword);
 }

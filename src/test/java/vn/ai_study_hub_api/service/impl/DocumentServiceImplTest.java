@@ -265,4 +265,49 @@ public class DocumentServiceImplTest {
         verify(documentRepository, times(1)).findById(documentId);
         verify(documentRepository, times(1)).save(mockDocument);
     }
+
+    @Test
+    void getPersonalDocuments_Success() {
+        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.ACTIVE);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
+
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(mockDocument.getId(), result.get(0).getId());
+        assertEquals(mockDocument.getTitle(), result.get(0).getTitle());
+
+        verify(userRepository, times(1)).findById(userId);
+        verify(documentRepository, times(1)).findActiveDocumentsByUploaderId(userId);
+    }
+
+    @Test
+    void getPersonalDocuments_UserNotFound() {
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
+                vn.ai_study_hub_api.exception.AppException.class,
+                () -> documentService.getPersonalDocuments(userId)
+        );
+
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatus());
+        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+    }
+
+    @Test
+    void getPersonalDocuments_OverLimitStorage() {
+        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.OVERLIMITSTORAGE);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
+                vn.ai_study_hub_api.exception.AppException.class,
+                () -> documentService.getPersonalDocuments(userId)
+        );
+
+        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, exception.getStatus());
+        assertEquals("Your storage limit has been exceeded! Access denied.", exception.getMessage());
+        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+    }
 }

@@ -212,12 +212,13 @@ public class DocumentServiceImpl implements DocumentService {
         return filename.substring(filename.lastIndexOf('.') + 1);
     }
     @Override
-    public List<DocumentResponse> getPersonalDocuments(UUID userId, String userStatus) {
+    public List<DocumentResponse> getPersonalDocuments(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new vn.ai_study_hub_api.exception.AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
 
-        if ("overlimitstorage".equalsIgnoreCase(userStatus)) {
+        if (vn.ai_study_hub_api.model.UserStatus.OVERLIMITSTORAGE.equals(user.getStatus())) {
             throw new vn.ai_study_hub_api.exception.AppException(HttpStatus.FORBIDDEN, "Your storage limit has been exceeded! Access denied.");
         }
-
 
         return documentRepository.findActiveDocumentsByUploaderId(userId)
                 .stream()
@@ -230,6 +231,74 @@ public class DocumentServiceImpl implements DocumentService {
                         .status(doc.getStatus() != null ? doc.getStatus().name() : null)
                         .createdAt(doc.getCreatedAt())
                         .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Tìm kiếm tài liệu public theo keyword.
+     *
+     * Luồng xử lý:
+     * 1. Validate keyword không trống
+     * 2. Gọi repository search với điều kiện:
+     *    - visibility = PUBLIC (chỉ tài liệu công khai)
+     *    - status = COMPLETED (chỉ tài liệu đã xử lý xong, tức "active")
+     *    - deleted_at IS NULL (loại bỏ tài liệu đã soft-delete)
+     *    - keyword match trong title, description, summary, hoặc tag label
+     * 3. Map kết quả sang DocumentResponse (bao gồm tags và uploaderName)
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> searchPublicDocuments(String keyword) {
+        log.info("Searching public documents with keyword: '{}'", keyword);
+
+        if (keyword == null || keyword.trim().isEmpty()) {
+            log.warn("Search keyword is empty, returning empty result");
+            return List.of();
+        }
+
+        String trimmedKeyword = keyword.trim();
+
+        List<DocumentEntity> results = documentRepository.searchPublicDocuments(
+                trimmedKeyword,
+                DocumentVisibility.PUBLIC,
+                DocumentStatus.COMPLETED
+        );
+
+        log.info("Found {} public documents matching keyword '{}'", results.size(), trimmedKeyword);
+
+        return results.stream()
+                .map(doc -> {
+                    // Lấy tên uploader (nếu có)
+                    String uploaderName = null;
+                    if (doc.getUploader() != null) {
+                        uploaderName = doc.getUploader().getFullName();
+                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
+                            uploaderName = doc.getUploader().getEmail();
+                        }
+                    }
+
+                    // Lấy danh sách tag labels
+                    List<String> tagLabels = null;
+                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
+                        tagLabels = doc.getTags().stream()
+                                .map(TagEntity::getLabel)
+                                .collect(Collectors.toList());
+                    }
+
+                    return DocumentResponse.builder()
+                            .id(doc.getId())
+                            .title(doc.getTitle())
+                            .fileName(doc.getTitle())
+                            .fileUrl(doc.getFileUrl())
+                            .fileSize(doc.getFileSizeBytes())
+                            .fileType(doc.getFileType())
+                            .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                            .description(doc.getDescription())
+                            .tags(tagLabels)
+                            .uploaderName(uploaderName)
+                            .createdAt(doc.getCreatedAt())
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 }

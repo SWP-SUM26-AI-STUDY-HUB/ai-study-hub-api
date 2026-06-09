@@ -95,17 +95,47 @@ public class    DocumentController {
             summary = "Get personal documents",
             description = "Lấy danh sách tài liệu cá nhân chưa xóa của user hiện tại, chặn nếu vượt hạn mức lưu trữ"
     )
-    public vn.ai_study_hub_api.common.ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> getPersonalDocuments(
-            @org.springframework.web.bind.annotation.RequestHeader("X-User-Id") String userIdStr,
-            @org.springframework.web.bind.annotation.RequestHeader("X-User-Status") String userStatus) {
-
-        java.util.UUID userId = java.util.UUID.fromString(userIdStr);
-
+    public vn.ai_study_hub_api.common.ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> getPersonalDocuments() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized getPersonalDocuments attempt: user principal not found in SecurityContext");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        java.util.UUID userId = userDetails.getId();
 
         java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse> documents =
-                documentService.getPersonalDocuments(userId, userStatus);
-
+                documentService.getPersonalDocuments(userId);
 
         return vn.ai_study_hub_api.common.ApiResponse.success(documents, "Personal documents retrieved successfully.");
+    }
+
+    /**
+     * Search public documents by keyword.
+     * Accessible by both guests and authenticated users.
+     *
+     * AC F-DOC-05 Scenario 1:
+     * - Queries document titles, tags, and extracted text content (description/summary)
+     * - Filters out soft-deleted, private, pending, or rejected documents
+     * - Returns only active (COMPLETED) public documents
+     * - Target response time: < 1.5 seconds
+     */
+    @GetMapping("/search")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(
+            summary = "Search public documents",
+            description = "Tìm kiếm tài liệu công khai theo từ khoá trong title, tags, description, summary. " +
+                    "Guest và User đều có thể truy cập. Chỉ trả về tài liệu public, active (COMPLETED), chưa bị xóa."
+    )
+    public ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> searchPublicDocuments(
+            @Parameter(description = "Từ khoá tìm kiếm", required = true)
+            @RequestParam("keyword") String keyword) {
+
+        log.info("Received search request with keyword: '{}'", keyword);
+
+        java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse> results =
+                documentService.searchPublicDocuments(keyword);
+
+        return ApiResponse.success(results, "Search completed successfully.");
     }
 }

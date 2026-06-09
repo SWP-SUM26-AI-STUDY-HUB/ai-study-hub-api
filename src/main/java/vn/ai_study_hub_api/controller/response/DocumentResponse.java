@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -17,6 +18,10 @@ public class DocumentResponse {
     private String fileName;
     private String fileUrl;
     private Long fileSize;
-    private String status; // private, pending, public, rejected
+    private String fileType;
+    private String status;
+    private String description;
+    private List<String> tags;
+    private String uploaderName;
     private LocalDateTime createdAt;
 }
