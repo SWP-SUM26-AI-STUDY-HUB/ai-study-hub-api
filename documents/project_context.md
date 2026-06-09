@@ -29,7 +29,7 @@ The success of the platform depends on reaching specific business and technical 
 | **System** | AI Response Latency | $<$ 5 seconds for RAG chat on documents under 100 pages |
 | **System** | AI Citation Accuracy | $\ge$ 90% accuracy in referencing sources (limiting hallucinations) |
 | **System** | Full-Text Search Speed | $<$ 1.5 seconds for query execution |
-| **System** | Document Preview Render | $<$ 3 seconds to display PDF/Word/PPTX online |
+| **System** | Document Preview Render | $<$ 3 seconds to display PDF/Word online |
 
 ---
 

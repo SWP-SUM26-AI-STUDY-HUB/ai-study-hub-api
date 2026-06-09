@@ -60,7 +60,7 @@ PHẦN 2: PHÂN HỆ QUẢN LÝ TÀI LIỆU (DOCUMENT MANAGEMENT)
 
 7. Upload Document (Tải tài liệu lên)
 
-Bước 1: User chọn file cần tải lên (.pdf, .docx, .pptx, .txt, .md) và chọn quyền riêng tư (Private hoặc Public).
+Bước 1: User chọn file cần tải lên (.pdf, .docx, .txt, .md) và chọn quyền riêng tư (Private hoặc Public).
 
 Bước 2: System kiểm tra status của User. Nếu status == 'overlimitstorage', System lập tức chặn và hiển thị popup yêu cầu xóa bớt tài liệu hoặc gia hạn gói cước.
 
@@ -104,7 +104,7 @@ Nếu file ở trạng thái public: Cho phép tất cả mọi người xem. Nm
 
 Nếu file ở trạng thái private/pending/rejected: Chỉ cho phép chính chủ (uploader_id == current_user_id) hoặc Admin xem preview nội dung.
 
-Bước 3: Hệ thống render và hiển thị trực tiếp nội dung văn bản (PDF, Word, PPTX) lên trình duyệt (Web Preview).
+Bước 3: Hệ thống render và hiển thị trực tiếp nội dung văn bản (PDF, Word) lên trình duyệt (Web Preview).
 
 11. Search Document (Tìm kiếm nâng cao)
 

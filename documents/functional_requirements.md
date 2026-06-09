@@ -47,7 +47,7 @@ This document contains the refined, unambiguous, and measurable Software Require
 ## Part 2: Document Management (F-DOC)
 
 ### 7. Document Upload (F-DOC-01)
-- **F-DOC-01.1:** The system shall accept file uploads in `.pdf`, `.docx`, `.pptx`, `.txt`, and `.md` formats.
+- **F-DOC-01.1:** The system shall accept file uploads in `.pdf`, `.docx`, `.txt`, and `.md` formats.
 - **F-DOC-01.2:** The system shall reject upload requests from users with status `'overlimitstorage'` and return a storage-limit warning.
 - **F-DOC-01.3:** The system shall verify that the combined total of the user's current storage usage (`storage_used`) and the size of the uploaded file is less than or equal to the storage limit (`storage_limit`) defined by their active subscription plan.
 - **F-DOC-01.4:** The system shall transmit the uploaded file to AWS S3 and extract the textual payload to support full-text indexing.
@@ -67,7 +67,7 @@ This document contains the refined, unambiguous, and measurable Software Require
 - **F-DOC-04.1:** The system shall allow any user, including guests, to view document previews that have a database visibility of `'public'`.
 - **F-DOC-04.2:** The system shall display a login popup prompting guest users to authenticate before initiating a file download request.
 - **F-DOC-04.3:** The system shall restrict preview and download actions on documents with a visibility of `'private'`, status `'pending'`, or `'rejected'` to the document owner and admin users.
-- **F-DOC-04.4:** The system shall render PDF, Word, and PPTX previews directly in the browser window within 3.0 seconds.
+- **F-DOC-04.4:** The system shall render PDF, Word previews directly in the browser window within 3.0 seconds.
 
 ### 11. Search Execution (F-DOC-05)
 - **F-DOC-05.1:** The system shall perform a database or search index query scanning document titles, tags, and extracted text content for user-supplied keywords.

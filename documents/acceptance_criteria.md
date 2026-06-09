@@ -21,7 +21,7 @@ For testing edge cases related to permissions and storage limits:
 | :--- | :--- | :--- |
 | **Max Cloud Storage** | 200 MB | 10 GB |
 | **Daily AI Request Limit** | 15 chats/day | 500 chats/day |
-| **Allowed File Formats** | `.pdf`, `.docx`, `.pptx`, `.txt`, `.md` | `.pdf`, `.docx`, `.pptx`, `.txt`, `.md` |
+| **Allowed File Formats** | `.pdf`, `.docx`, `.txt`, `.md` | `.pdf`, `.docx`, `.txt`, `.md` |
 | **Max File Upload Size** | 20 MB | 20 MB |
 
 ---
@@ -243,7 +243,7 @@ For testing edge cases related to permissions and storage limits:
 - **Given** The user attempts to upload a file with extension `.key` (Keynote) or `.png`.
 - **When** The user selects the file and clicks upload.
 - **Then** The system checks the file extension.
-- **And** The system blocks the upload because it is not one of `.pdf`, `.docx`, `.pptx`, `.txt`, `.md`.
+- **And** The system blocks the upload because it is not one of `.pdf`, `.docx`, `.txt`, `.md`.
 - **And** The system returns the error: "Unsupported file format".
 
 ---
@@ -288,7 +288,7 @@ For testing edge cases related to permissions and storage limits:
 ### 10. Document Preview and Download (F-DOC-04)
 
 > [!IMPORTANT]
-> The in-browser rendering time for PDF, Word, and PPTX previews must not exceed 3.0 seconds to maintain a premium user experience.
+> The in-browser rendering time for PDF, Word previews must not exceed 3.0 seconds to maintain a premium user experience.
 
 #### Scenario 1: Guest or user viewing a public document preview (Happy Path)
 - **Given** A document has visibility `'public'` and status `'active'`.
@@ -348,7 +348,7 @@ For testing edge cases related to permissions and storage limits:
 ### 14. Document Soft-Deletion (F-DOC-08)
 
 #### Scenario 1: Soft-deleting a file and updating user storage (Happy Path)
-- **Given** The user owns `slides.pptx` (20MB) and their current storage usage is 120MB.
+- **Given** The user owns `slides.pdf` (20MB) and their current storage usage is 120MB.
 - **When** The user clicks the "Delete" button.
 - **Then** The system displays a Confirmation Modal.
 - **And** When the user confirms the action.

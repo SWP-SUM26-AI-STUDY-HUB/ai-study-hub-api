@@ -18,7 +18,7 @@ AI Study Hub was created to solve the core pain points of students and learners 
 | :--- | :--- | :--- |
 | **Scattered Data** | Users waste 15-30 minutes searching for old files; links and files are easily lost when Google Drive links are deleted or Zalo/Messenger chats are cleared. | A centralized cloud repository that allows scientific organization by subjects and flexible tagging. |
 | **Inefficient Search** | Users can only search by file names, making it impossible to find text hidden inside documents. | An Advanced **Full-text Search** feature that scans all text inside PDF, Word, and PowerPoint files. |
-| **Information Overload** | Students waste hours reading long PDFs/PPTXs to find a single formula, concept, or key point. | An AI Chatbot powered by **RAG (Retrieval-Augmented Generation)** architecture to summarize and answer questions directly based on documents. |
+| **Information Overload** | Students waste hours reading long PDFs to find a single formula, concept, or key point. | An AI Chatbot powered by **RAG (Retrieval-Augmented Generation)** architecture to summarize and answer questions directly based on documents. |
 | **Manual & Fragmented Sharing**| Sharing is temporary via chat applications, lacking structured knowledge transfer between student generations. | A **Public Library** organized by universities/majors, moderated by Admins, and supported by a community rating system. |
 | **Hardware & Cost Limits** | Personal device storage is limited; upgrading personal cloud drives (Google One, iCloud) is expensive for students. | Optimized cloud storage (AWS S3) with flexible monetization plans (Free & Premium) designed for students. |
 
@@ -41,7 +41,7 @@ Project success will be measured by two sets of core metrics:
 *   **AI Latency:** Response time for the RAG-based AI Chatbot on documents under 100 pages must be under 5 seconds.
 *   **AI Accuracy:** Citation accuracy must exceed 90% to prevent AI hallucination outside the scope of the selected documents.
 *   **Search Speed:** Full-text search queries must return matches in under 1.5 seconds.
-*   **Preview Speed:** Online document preview rendering (PDF, Word, PPTX) must load in under 3 seconds.
+*   **Preview Speed:** Online document preview rendering (PDF, Word) must load in under 3 seconds.
 
 #### 1.4.2. Business Metrics
 *   **User Engagement:** Reach a minimum of 1,000 Monthly Active Users (MAU) within 3 months of deployment.
@@ -86,7 +86,7 @@ To track and manage requirements, each major feature is labeled with a unique ID
     *   Fast login integration via Google OAuth2.
     *   Profile management (basic info, password changes).
 *   **FEAT-DOC: Document Management & Categorization**
-    *   Support uploads for `.pdf`, `.docx`, `.pptx`, `.txt`, and `.md` files.
+    *   Support uploads for `.pdf`, `.docx`, `.txt`, and `.md` files.
     *   Smart tagging system allowing users to categorize documents by subjects, chapters, or topics.
     *   Flexible privacy controls (Private for personal use / Public to share with the community after Admin approval).
 *   **FEAT-FTS: Advanced Full-text Search**

@@ -14,7 +14,7 @@ Trong quá trình học tập tại môi trường đại học, sinh viên thư
 
 - **Dữ liệu phân tán:** Không có kho lưu trữ trung tâm, tài liệu nằm rải rác trên nhiều kênh truyền thông và lưu trữ khác nhau.
 - **Hiệu suất tìm kiếm thấp:** Thiếu công cụ phân loại khoa học và cơ chế tìm kiếm thông minh, gây khó khăn khi cần truy xuất lại tài liệu cũ.
-- **Quá tải thông tin:** Sinh viên mất nhiều thời gian để đọc và lọc kiến thức cốt lõi từ các tài liệu dài (PDF, Docx, PPTX).
+- **Quá tải thông tin:** Sinh viên mất nhiều thời gian để đọc và lọc kiến thức cốt lõi từ các tài liệu dài (PDF, Docx).
 - **Chia sẻ thủ công:** Quy trình chia sẻ tài liệu giữa các sinh viên, nhóm học tập hoặc các khóa học còn mang tính rời rạc, chưa có tính kế thừa.
 - **Giới hạn phần cứng:** Dung lượng lưu trữ trên thiết bị cá nhân bị hạn chế, đòi hỏi một giải pháp lưu trữ đám mây tập trung.
 
@@ -51,7 +51,7 @@ Hệ thống bao gồm 4 tác nhân chính:
 
 ### 3.2. Phân hệ Quản lý Tài liệu (Document Management)
 
-- **F-DOC-01: Upload tài liệu:** Hỗ trợ tải lên các định dạng file phổ biến bao gồm `.pdf`, `.docx`, `.pptx`, `.txt`, `.md`. Áp dụng giới hạn dung lượng tối đa trên mỗi file (ví dụ: 20MB) tùy theo cấu hình phân quyền tài khoản.
+- **F-DOC-01: Upload tài liệu:** Hỗ trợ tải lên các định dạng file phổ biến bao gồm `.pdf`, `.docx`, `.txt`, `.md`. Áp dụng giới hạn dung lượng tối đa trên mỗi file (ví dụ: 20MB) tùy theo cấu hình phân quyền tài khoản.
 - **F-DOC-02: Document Tagging:** Khi tải file lên thì người dùng sẽ chọn các tag có sẵn hoặc là tự tạo ra tag riêng cho mình để hỗ trợ phân loại, quản lí tài liệu.
 - **F-DOC-03: Tìm kiếm nâng cao (Advanced Search):** Tích hợp tính năng Full-text Search (Tìm kiếm toàn văn), hỗ trợ truy vấn không chỉ theo tiêu đề file mà còn theo nội dung văn bản bên trong tài liệu.
 - **F-DOC-04: Cấu hình quyền riêng tư:** Người dùng có thể thiết lập trạng thái tài liệu:

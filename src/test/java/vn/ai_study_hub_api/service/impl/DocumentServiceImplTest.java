@@ -17,8 +17,11 @@ import vn.ai_study_hub_api.model.NotificationEntity;
 import vn.ai_study_hub_api.model.TagEntity;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
+import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
@@ -54,6 +57,9 @@ public class DocumentServiceImplTest {
     @Mock
     private WebClient webClient;
 
+    @Mock
+    private StoragePlanRepository storagePlanRepository;
+
     @InjectMocks
     private DocumentServiceImpl documentService;
 
@@ -75,6 +81,7 @@ public class DocumentServiceImplTest {
                 .id(userId)
                 .email("testuser@example.com")
                 .fullName("Test User")
+                .status(UserStatus.ACTIVE)
                 .build();
 
         mockTag = TagEntity.builder()
@@ -104,7 +111,15 @@ public class DocumentServiceImplTest {
                 "pdf content".getBytes()
         );
 
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L) // 1 GB
+                .maxAiRequestsPerDay(15)
+                .build();
+
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
         when(tagRepository.findAllById(List.of(1))).thenReturn(List.of(mockTag));
         when(uploadProvider.generateStoragePath(any(UUID.class), any(UUID.class), anyString())).thenReturn("mock-user-id/mock-uuid.pdf");
         when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> {
@@ -163,11 +178,27 @@ public class DocumentServiceImplTest {
         when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
         when(uploadProvider.generatePresignedUrl(storagePath)).thenReturn("https://presigned.url/test.pdf");
 
+        // Mock WebClient call
+        WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
+        WebClient.RequestBodySpec requestBodySpec = mock(WebClient.RequestBodySpec.class);
+        WebClient.RequestHeadersSpec requestHeadersSpec = mock(WebClient.RequestHeadersSpec.class);
+        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
+
+        when(webClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
+        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
+
         documentService.processDocumentAsync(documentId, tempFile, storagePath, contentType);
 
         verify(uploadProvider, times(1)).upload(tempFile, storagePath, contentType);
         verify(uploadProvider, times(1)).generatePresignedUrl(storagePath);
         verify(documentRepository, times(1)).save(any(DocumentEntity.class));
+        verify(userRepository, times(1)).save(mockUser);
+        verify(webClient, times(1)).post();
+        assertEquals(100L, mockUser.getStorageUsed());
         assertEquals(DocumentStatus.PROCESSING, mockDocument.getStatus());
         verify(tempFile, times(1)).delete();
     }
@@ -197,6 +228,8 @@ public class DocumentServiceImplTest {
 
         verify(uploadProvider, times(1)).upload(tempFile, storagePath, contentType);
         verify(documentRepository, times(1)).save(any(DocumentEntity.class));
+        verify(userRepository, times(1)).save(mockUser);
+        assertEquals(100L, mockUser.getStorageUsed());
         assertEquals(DocumentStatus.PENDING, mockDocument.getStatus());
         
         verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
@@ -264,5 +297,70 @@ public class DocumentServiceImplTest {
 
         verify(documentRepository, times(1)).findById(documentId);
         verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
+    void initiateUpload_UserOverlimitStorage() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.pdf",
+                "application/pdf",
+                "pdf content".getBytes()
+        );
+
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+        );
+        assertEquals("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void initiateUpload_UnsupportedFileFormat() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.png",
+                "image/png",
+                "image content".getBytes()
+        );
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+        );
+        assertEquals("Unsupported file format", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void initiateUpload_StorageQuotaExceeded() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.pdf",
+                "application/pdf",
+                "pdf content".getBytes()
+        );
+
+        mockUser.setStorageUsed(1073741824L); // 1 GB limit reached
+
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L) // 1 GB
+                .maxAiRequestsPerDay(15)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+        );
+        assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
+        verify(documentRepository, never()).save(any());
     }
 }

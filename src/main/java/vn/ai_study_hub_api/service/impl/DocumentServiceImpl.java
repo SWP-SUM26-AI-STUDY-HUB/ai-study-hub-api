@@ -15,9 +15,12 @@ import vn.ai_study_hub_api.model.DocumentVisibility;
 import vn.ai_study_hub_api.model.NotificationEntity;
 import vn.ai_study_hub_api.model.TagEntity;
 import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.model.UserRole;
+import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.DocumentService;
@@ -39,6 +42,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final NotificationRepository notificationRepository;
     private final UploadProvider uploadProvider;
     private final WebClient webClient;
+    private final StoragePlanRepository storagePlanRepository;
 
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
@@ -51,7 +55,29 @@ public class DocumentServiceImpl implements DocumentService {
         // Retrieve uploader user
         UserEntity uploader = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
- 
+
+        // 1. Check user status
+        if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
+            throw new IllegalArgumentException("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload");
+        }
+
+        // 2. Validate file format
+        String originalFilename = file.getOriginalFilename();
+        String fileExtension = getFileExtension(originalFilename).toLowerCase();
+        List<String> allowedExtensions = List.of("pdf", "docx", "txt", "md");
+        if (originalFilename == null || !allowedExtensions.contains(fileExtension)) {
+            throw new IllegalArgumentException("Unsupported file format");
+        }
+
+        // 3. Validate storage limit
+        Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
+        StoragePlanEntity plan = storagePlanRepository.findById(planId)
+                .orElseThrow(() -> new IllegalArgumentException("Storage plan not found with ID: " + planId));
+        long limitInBytes = plan.getStorageLimit() * 1024L * 1024L * 1024L;
+        if (uploader.getStorageUsed() + file.getSize() > limitInBytes) {
+            throw new IllegalArgumentException("Upload failed: file size exceeds remaining storage quota");
+        }
+
         // Retrieve and validate tags
         List<TagEntity> tags = tagRepository.findAllById(tagIds);
  
@@ -59,9 +85,7 @@ public class DocumentServiceImpl implements DocumentService {
         UUID documentId = UUID.randomUUID();
  
         // Generate storage path using uploadProvider (which formats as /{user_uuid}/{document_uuid}.{fileExtension})
-        String originalFilename = file.getOriginalFilename();
         String storagePath = uploadProvider.generateStoragePath(userId, documentId, originalFilename);
-        String fileExtension = getFileExtension(originalFilename);
  
         // Determine title
         String docTitle = (title != null && !title.trim().isEmpty()) ? title : originalFilename;
@@ -99,6 +123,15 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
                     .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
 
+            // Update user storage usage
+            UserEntity uploader = document.getUploader();
+            if (uploader != null) {
+                long newStorageUsed = uploader.getStorageUsed() + document.getFileSizeBytes();
+                uploader.setStorageUsed(newStorageUsed);
+                userRepository.save(uploader);
+                log.info("Updated storage_used for user {} to {} bytes", uploader.getId(), newStorageUsed);
+            }
+
             if (DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
                 // Public status -> auto switch to pending status
                 document.setStatus(DocumentStatus.PENDING);
@@ -118,21 +151,21 @@ public class DocumentServiceImpl implements DocumentService {
                 log.info("Generated temporary access URL for document {}: {}", documentId, presignedUrl);
 
                 // Send HTTP POST callback trigger to FastAPI
-//                log.info("Triggering FastAPI processing for document: {}", documentId);
-//                Map<String, String> payload = Map.of(
-//                        "document_id", documentId.toString(),
-//                        "file_url", presignedUrl
-//                );
-//
-//                webClient.post()
-//                        .uri(fastApiUrl)
-//                        .contentType(MediaType.APPLICATION_JSON)
-//                        .bodyValue(payload)
-//                        .retrieve()
-//                        .toBodilessEntity()
-//                        .block(); // Synchronous block inside the async worker thread is safe
-//
-//                log.info("FastAPI webhook successfully triggered for document ID: {}", documentId);
+                log.info("Triggering FastAPI processing for document: {}", documentId);
+                Map<String, String> payload = Map.of(
+                        "document_id", documentId.toString(),
+                        "file_url", presignedUrl
+                );
+
+                webClient.post()
+                        .uri(fastApiUrl)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(payload)
+                        .retrieve()
+                        .toBodilessEntity()
+                        .block(); // Synchronous block inside the async worker thread is safe
+
+                log.info("FastAPI webhook successfully triggered for document ID: {}", documentId);
             }
 
         } catch (Exception e) {
