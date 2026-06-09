@@ -176,7 +176,8 @@ CREATE TABLE "document_chunks" (
   "document_id" uuid,
   "chunk_index" integer NOT NULL,
   "content" text NOT NULL,
-  "embedding" vector(1536),
+  "embedding" vector(768),
+  "metadata" jsonb,
   "page_number" integer,
   "created_at" timestamp DEFAULT (now())
 );
@@ -187,6 +188,7 @@ ALTER TABLE "document_chunks" ADD FOREIGN KEY ("document_id") REFERENCES "docume
 
 CREATE INDEX document_chunks_embedding_hnsw_idx ON document_chunks USING hnsw (embedding vector_cosine_ops);
 
+ALTER TABLE "users" ADD COLUMN "bio" TEXT;
 
 ALTER TABLE "documents" ADD COLUMN "summary" TEXT;
 
