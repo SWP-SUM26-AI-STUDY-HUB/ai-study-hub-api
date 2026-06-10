@@ -1,0 +1,11 @@
+package vn.ai_study_hub_api.controller.response;
+
+import lombok.Builder;
+import lombok.Data;
+
+@Data
+@Builder
+public class DocumentShareResponse {
+    private String token;
+    private String shareUrl;
+}

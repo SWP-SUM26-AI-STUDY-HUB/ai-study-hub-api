@@ -15,6 +15,9 @@ public interface DocumentService {
 
     void handleFastApiCallback(UUID documentId, String status, String summary);
 
+    DocumentEntity generateShareLink(UUID documentId, UUID userId);
+
+    DocumentEntity getSharedDocument(String token);
     List<DocumentResponse> getPersonalDocuments(UUID userId);
 
     /**

@@ -6,9 +6,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
+import vn.ai_study_hub_api.exception.AppException;
 import reactor.core.publisher.Mono;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
@@ -404,5 +406,82 @@ public class DocumentServiceImplTest {
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
         verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void generateShareLink_Success() {
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocumentEntity result = documentService.generateShareLink(documentId, userId);
+
+        assertNotNull(result);
+        assertNotNull(result.getLinkShare());
+        assertTrue(result.getLinkShare().startsWith("doc-"));
+        verify(documentRepository, times(1)).findById(documentId);
+        verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
+    void generateShareLink_DocumentNotFound() {
+        when(documentRepository.findById(documentId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.generateShareLink(documentId, userId)
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Document not found", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void generateShareLink_NotOwner() {
+        UUID otherUserId = UUID.randomUUID();
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.generateShareLink(documentId, otherUserId)
+        );
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        assertEquals("You are not the owner of this document", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void getSharedDocument_Success() {
+        String token = "doc-123456";
+        mockDocument.setLinkShare(token);
+        when(documentRepository.findByLinkShare(token)).thenReturn(Optional.of(mockDocument));
+
+        DocumentEntity result = documentService.getSharedDocument(token);
+
+        assertNotNull(result);
+        assertEquals(mockDocument, result);
+        verify(documentRepository, times(1)).findByLinkShare(token);
+    }
+
+    @Test
+    void getSharedDocument_NotFound() {
+        String token = "doc-123456";
+        when(documentRepository.findByLinkShare(token)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getSharedDocument(token)
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Shared document not found", exception.getMessage());
+    }
+
+    @Test
+    void getSharedDocument_Deleted() {
+        String token = "doc-123456";
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        when(documentRepository.findByLinkShare(token)).thenReturn(Optional.of(mockDocument));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getSharedDocument(token)
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Shared document not found", exception.getMessage());
     }
 }

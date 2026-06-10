@@ -244,6 +244,42 @@ public class DocumentServiceImpl implements DocumentService {
         }
         return filename.substring(filename.lastIndexOf('.') + 1);
     }
+
+    @Override
+    @Transactional
+    public DocumentEntity generateShareLink(UUID documentId, UUID userId) {
+        log.info("Generating share link for document ID: {}, user ID: {}", documentId, userId);
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        if (!document.getUploader().getId().equals(userId)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
+        }
+
+        String token = "doc-" + UUID.randomUUID().toString();
+        document.setLinkShare(token);
+
+        return documentRepository.save(document);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentEntity getSharedDocument(String token) {
+        log.info("Retrieving shared document for token: {}", token);
+
+        DocumentEntity document = documentRepository.findByLinkShare(token)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Shared document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Shared document not found");
+        }
+
+        return document;
     @Override
     public List<DocumentResponse> getPersonalDocuments(UUID userId) {
         UserEntity user = userRepository.findById(userId)
