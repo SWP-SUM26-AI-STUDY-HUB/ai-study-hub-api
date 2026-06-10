@@ -1,6 +1,7 @@
 package vn.ai_study_hub_api.service;
 
 import org.springframework.web.multipart.MultipartFile;
+import vn.ai_study_hub_api.controller.response.DocumentResponse;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentVisibility;
 import java.io.File;
@@ -13,4 +14,13 @@ public interface DocumentService {
     void processDocumentAsync(UUID documentId, File tempFile, String storagePath, String contentType);
 
     void handleFastApiCallback(UUID documentId, String status, String summary);
+
+    List<DocumentResponse> getPersonalDocuments(UUID userId);
+
+    /**
+     * Search public documents by keyword.
+     * Returns only active (COMPLETED), public, non-deleted documents matching
+     * the keyword in title, description, summary, or tag labels.
+     */
+    List<DocumentResponse> searchPublicDocuments(String keyword);
 }

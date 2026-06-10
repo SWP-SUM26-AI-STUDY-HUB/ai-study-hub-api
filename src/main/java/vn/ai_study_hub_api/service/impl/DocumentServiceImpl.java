@@ -3,12 +3,15 @@ package vn.ai_study_hub_api.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
+import vn.ai_study_hub_api.controller.response.DocumentResponse;
+import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -30,6 +33,7 @@ import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -239,5 +243,95 @@ public class DocumentServiceImpl implements DocumentService {
             return "";
         }
         return filename.substring(filename.lastIndexOf('.') + 1);
+    }
+    @Override
+    public List<DocumentResponse> getPersonalDocuments(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new vn.ai_study_hub_api.exception.AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
+
+        if (vn.ai_study_hub_api.model.UserStatus.OVERLIMITSTORAGE.equals(user.getStatus())) {
+            throw new vn.ai_study_hub_api.exception.AppException(HttpStatus.FORBIDDEN, "Your storage limit has been exceeded! Access denied.");
+        }
+
+        return documentRepository.findActiveDocumentsByUploaderId(userId)
+                .stream()
+                .map(doc -> DocumentResponse.builder()
+                        .id(doc.getId())
+                        .title(doc.getTitle())
+                        .fileName(doc.getTitle())
+                        .fileUrl(doc.getFileUrl())
+                        .fileSize(doc.getFileSizeBytes())
+                        .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                        .createdAt(doc.getCreatedAt())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Tìm kiếm tài liệu public theo keyword.
+     *
+     * Luồng xử lý:
+     * 1. Validate keyword không trống
+     * 2. Gọi repository search với điều kiện:
+     *    - visibility = PUBLIC (chỉ tài liệu công khai)
+     *    - status = COMPLETED (chỉ tài liệu đã xử lý xong, tức "active")
+     *    - deleted_at IS NULL (loại bỏ tài liệu đã soft-delete)
+     *    - keyword match trong title, description, summary, hoặc tag label
+     * 3. Map kết quả sang DocumentResponse (bao gồm tags và uploaderName)
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> searchPublicDocuments(String keyword) {
+        log.info("Searching public documents with keyword: '{}'", keyword);
+
+        if (keyword == null || keyword.trim().isEmpty()) {
+            log.warn("Search keyword is empty, returning empty result");
+            return List.of();
+        }
+
+        String trimmedKeyword = keyword.trim();
+
+        List<DocumentEntity> results = documentRepository.searchPublicDocuments(
+                trimmedKeyword,
+                DocumentVisibility.PUBLIC,
+                DocumentStatus.COMPLETED
+        );
+
+        log.info("Found {} public documents matching keyword '{}'", results.size(), trimmedKeyword);
+
+        return results.stream()
+                .map(doc -> {
+                    // Lấy tên uploader (nếu có)
+                    String uploaderName = null;
+                    if (doc.getUploader() != null) {
+                        uploaderName = doc.getUploader().getFullName();
+                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
+                            uploaderName = doc.getUploader().getEmail();
+                        }
+                    }
+
+                    // Lấy danh sách tag labels
+                    List<String> tagLabels = null;
+                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
+                        tagLabels = doc.getTags().stream()
+                                .map(TagEntity::getLabel)
+                                .collect(Collectors.toList());
+                    }
+
+                    return DocumentResponse.builder()
+                            .id(doc.getId())
+                            .title(doc.getTitle())
+                            .fileName(doc.getTitle())
+                            .fileUrl(doc.getFileUrl())
+                            .fileSize(doc.getFileSizeBytes())
+                            .fileType(doc.getFileType())
+                            .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                            .description(doc.getDescription())
+                            .tags(tagLabels)
+                            .uploaderName(uploaderName)
+                            .createdAt(doc.getCreatedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
     }
 }

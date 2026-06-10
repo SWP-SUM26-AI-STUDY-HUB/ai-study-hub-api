@@ -73,6 +73,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/social-login",
                                 "/api/v1/auth/**",
+                                "/api/v1/documents/search",
                                 "/api/v1/internal/**",
                                 "/api/internal/**",
                                 "/login/oauth2/**",
