@@ -157,6 +157,8 @@ public class    DocumentController {
                 .build();
 
         return ApiResponse.success(response, "Shared document details retrieved successfully");
+    }
+
     @org.springframework.web.bind.annotation.GetMapping("/personal")
     @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.OK)
     @io.swagger.v3.oas.annotations.Operation(
@@ -205,5 +207,26 @@ public class    DocumentController {
                 documentService.searchPublicDocuments(keyword);
 
         return ApiResponse.success(results, "Search completed successfully.");
+    }
+
+    @DeleteMapping("/{documentId}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Soft-delete a document", description = "Soft-deletes a document and updates user storage quota.")
+    public ApiResponse<Void> deleteDocument(
+            @PathVariable("documentId") UUID documentId) {
+        
+        log.info("Request to delete document ID: {}", documentId);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized delete document attempt");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        documentService.deleteDocument(documentId, userId);
+
+        return ApiResponse.success("Document deleted successfully");
     }
 }

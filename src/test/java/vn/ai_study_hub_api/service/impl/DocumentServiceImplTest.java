@@ -344,6 +344,9 @@ public class DocumentServiceImplTest {
         assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, exception.getStatus());
         assertEquals("Your storage limit has been exceeded! Access denied.", exception.getMessage());
         verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+    }
+
+    @Test
     void initiateUpload_UserOverlimitStorage() {
         MockMultipartFile file = new MockMultipartFile(
                 "file",
@@ -483,5 +486,114 @@ public class DocumentServiceImplTest {
         );
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
         assertEquals("Shared document not found", exception.getMessage());
+    }
+
+    @Test
+    void deleteDocument_Success() {
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(20L * 1024L * 1024L); // 20 MB
+        mockUser.setStorageUsed(120L * 1024L * 1024L); // 120 MB
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
+        assertNotNull(mockDocument.getDeletedAt());
+        assertEquals(100L * 1024L * 1024L, mockUser.getStorageUsed()); // 120 - 20 = 100 MB
+
+        verify(documentRepository, times(1)).findByIdWithUploader(documentId);
+        verify(documentRepository, times(1)).save(mockDocument);
+        verify(userRepository, times(1)).save(mockUser);
+    }
+
+    @Test
+    void deleteDocument_Success_UploadingState() {
+        mockDocument.setStatus(DocumentStatus.UPLOADING);
+        mockDocument.setFileSizeBytes(20L * 1024L * 1024L); // 20 MB
+        mockUser.setStorageUsed(120L * 1024L * 1024L); // 120 MB
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
+        assertNotNull(mockDocument.getDeletedAt());
+        assertEquals(120L * 1024L * 1024L, mockUser.getStorageUsed()); // Unchanged
+
+        verify(documentRepository, times(1)).findByIdWithUploader(documentId);
+        verify(documentRepository, times(1)).save(mockDocument);
+        verify(userRepository, never()).save(any(UserEntity.class));
+    }
+
+    @Test
+    void deleteDocument_NotFound() {
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.deleteDocument(documentId, userId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Document not found", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void deleteDocument_AlreadyDeleted() {
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.deleteDocument(documentId, userId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Document not found", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void deleteDocument_NotOwner() {
+        UUID otherUserId = UUID.randomUUID();
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.deleteDocument(documentId, otherUserId)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        assertEquals("You are not the owner of this document", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void processDocumentAsync_AbortedIfDeleted() {
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        mockDocument.setStatus(DocumentStatus.DELETED);
+
+        File tempFile = mock(File.class);
+        when(tempFile.exists()).thenReturn(true);
+        when(tempFile.delete()).thenReturn(true);
+
+        String storagePath = userId.toString() + "/mock-uuid.pdf";
+        String contentType = "application/pdf";
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        documentService.processDocumentAsync(documentId, tempFile, storagePath, contentType);
+
+        verify(uploadProvider, times(1)).upload(tempFile, storagePath, contentType);
+        verify(documentRepository, times(1)).findByIdWithUploader(documentId);
+        // Verify that storage wasn't updated and FastAPI wasn't triggered
+        verify(documentRepository, never()).save(any(DocumentEntity.class));
+        verify(userRepository, never()).save(any(UserEntity.class));
+        verify(tempFile, times(1)).delete();
     }
 }
