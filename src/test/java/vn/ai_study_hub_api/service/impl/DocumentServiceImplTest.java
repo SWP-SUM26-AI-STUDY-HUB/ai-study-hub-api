@@ -25,6 +25,10 @@ import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
+import vn.ai_study_hub_api.controller.response.DocumentAccessResponse;
+import vn.ai_study_hub_api.security.CustomUserDetails;
+import vn.ai_study_hub_api.exception.AppException;
+import org.springframework.http.HttpStatus;
 
 import java.io.File;
 import java.util.Collections;
@@ -362,5 +366,160 @@ public class DocumentServiceImplTest {
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
         verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void getPreviewAccess_PublicCompleted_Success() {
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(uploadProvider.generatePresignedUrl(mockDocument.getFileUrl())).thenReturn("https://presigned.url/test.pdf");
+
+        DocumentAccessResponse response = documentService.getPreviewAccess(documentId, null);
+
+        assertNotNull(response);
+        assertEquals(documentId, response.getDocumentId());
+        assertEquals("https://presigned.url/test.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getPreviewAccess_PrivateOwner_Success() {
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        CustomUserDetails userDetails = CustomUserDetails.build(UserEntity.builder()
+                .id(userId)
+                .email("testuser@example.com")
+                .status(UserStatus.ACTIVE)
+                .role(UserRole.USER)
+                .build());
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(uploadProvider.generatePresignedUrl(mockDocument.getFileUrl())).thenReturn("https://presigned.url/test.pdf");
+
+        DocumentAccessResponse response = documentService.getPreviewAccess(documentId, userDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned.url/test.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getPreviewAccess_PrivateAdmin_Success() {
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        CustomUserDetails adminDetails = CustomUserDetails.build(UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("admin@example.com")
+                .status(UserStatus.ACTIVE)
+                .role(UserRole.ADMIN)
+                .build());
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(uploadProvider.generatePresignedUrl(mockDocument.getFileUrl())).thenReturn("https://presigned.url/test.pdf");
+
+        DocumentAccessResponse response = documentService.getPreviewAccess(documentId, adminDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned.url/test.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getPreviewAccess_PrivateNonOwner_Forbidden() {
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        CustomUserDetails otherDetails = CustomUserDetails.build(UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("other@example.com")
+                .status(UserStatus.ACTIVE)
+                .role(UserRole.USER)
+                .build());
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> 
+                documentService.getPreviewAccess(documentId, otherDetails)
+        );
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals("Access denied.", ex.getMessage());
+    }
+
+    @Test
+    void getPreviewAccess_DeletedDocument_NotFound() {
+        mockDocument.setStatus(DocumentStatus.DELETED);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> 
+                documentService.getPreviewAccess(documentId, null)
+        );
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        assertEquals("Document not found", ex.getMessage());
+    }
+
+    @Test
+    void getPreviewAccess_GuestPrivate_Unauthorized() {
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> 
+                documentService.getPreviewAccess(documentId, null)
+        );
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+        assertEquals("Unauthorized: Access denied.", ex.getMessage());
+    }
+
+    @Test
+    void getDownloadAccess_PublicCompleted_Success() {
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        CustomUserDetails userDetails = CustomUserDetails.build(UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("testuser@example.com")
+                .status(UserStatus.ACTIVE)
+                .role(UserRole.USER)
+                .build());
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(uploadProvider.generatePresignedUrl(mockDocument.getFileUrl())).thenReturn("https://presigned.url/test.pdf");
+
+        DocumentAccessResponse response = documentService.getDownloadAccess(documentId, userDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned.url/test.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getDownloadAccess_Guest_Unauthorized() {
+        AppException ex = assertThrows(AppException.class, () -> 
+                documentService.getDownloadAccess(documentId, null)
+        );
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+        assertEquals("Unauthorized: Access denied.", ex.getMessage());
+    }
+
+    @Test
+    void getDownloadAccess_PrivateNonOwner_Forbidden() {
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+
+        CustomUserDetails otherDetails = CustomUserDetails.build(UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("other@example.com")
+                .status(UserStatus.ACTIVE)
+                .role(UserRole.USER)
+                .build());
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> 
+                documentService.getDownloadAccess(documentId, otherDetails)
+        );
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        assertEquals("Access denied.", ex.getMessage());
     }
 }

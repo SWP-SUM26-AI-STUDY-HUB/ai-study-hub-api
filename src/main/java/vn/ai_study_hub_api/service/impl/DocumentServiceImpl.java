@@ -25,6 +25,10 @@ import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.DocumentService;
 import vn.ai_study_hub_api.service.UploadProvider;
+import vn.ai_study_hub_api.controller.response.DocumentAccessResponse;
+import vn.ai_study_hub_api.security.CustomUserDetails;
+import vn.ai_study_hub_api.exception.AppException;
+import org.springframework.http.HttpStatus;
 
 import java.io.File;
 import java.util.List;
@@ -239,5 +243,95 @@ public class DocumentServiceImpl implements DocumentService {
             return "";
         }
         return filename.substring(filename.lastIndexOf('.') + 1);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentAccessResponse getPreviewAccess(UUID documentId, CustomUserDetails userDetails) {
+        log.info("Getting preview access for document ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        boolean hasAccess = false;
+
+        if (DocumentVisibility.PUBLIC.equals(document.getVisibility()) && DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            hasAccess = true;
+        } else {
+            if (userDetails != null) {
+                boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(userDetails.getId());
+                boolean isAdmin = userDetails.getAuthorities().stream()
+                        .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+                if (isOwner || isAdmin) {
+                    hasAccess = true;
+                }
+            } else {
+                throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+            }
+        }
+
+        if (!hasAccess) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
+        }
+
+        String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
+
+        return DocumentAccessResponse.builder()
+                .documentId(document.getId())
+                .title(document.getTitle())
+                .fileType(document.getFileType())
+                .fileSizeBytes(document.getFileSizeBytes())
+                .presignedUrl(presignedUrl)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentAccessResponse getDownloadAccess(UUID documentId, CustomUserDetails userDetails) {
+        log.info("Getting download access for document ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
+
+        if (userDetails == null) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        boolean hasAccess = false;
+
+        if (DocumentVisibility.PUBLIC.equals(document.getVisibility()) && DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            hasAccess = true;
+        } else {
+            boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(userDetails.getId());
+            boolean isAdmin = userDetails.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+            if (isOwner || isAdmin) {
+                hasAccess = true;
+            }
+        }
+
+        if (!hasAccess) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
+        }
+
+        String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
+
+        return DocumentAccessResponse.builder()
+                .documentId(document.getId())
+                .title(document.getTitle())
+                .fileType(document.getFileType())
+                .fileSizeBytes(document.getFileSizeBytes())
+                .presignedUrl(presignedUrl)
+                .build();
     }
 }

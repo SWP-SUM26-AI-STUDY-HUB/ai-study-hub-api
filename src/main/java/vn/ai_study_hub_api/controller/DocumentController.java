@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.request.DocumentUploadRequest;
 import vn.ai_study_hub_api.controller.response.DocumentUploadResponse;
+import vn.ai_study_hub_api.controller.response.DocumentAccessResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -89,5 +90,43 @@ public class DocumentController {
             log.warn("Invalid upload arguments: {}", e.getMessage());
             throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    @GetMapping("/{id}/preview")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get document preview url", description = "Generates a temporary presigned S3 URL for viewing the document. Guests can access it if the document is public and completed.")
+    public ApiResponse<DocumentAccessResponse> getPreviewUrl(
+            @Parameter(description = "Document UUID", required = true) @PathVariable("id") UUID id) {
+        log.info("Received request to preview document ID: {}", id);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        CustomUserDetails userDetails = null;
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            userDetails = (CustomUserDetails) authentication.getPrincipal();
+        }
+
+        DocumentAccessResponse response = documentService.getPreviewAccess(id, userDetails);
+        return ApiResponse.success(response, "Document preview access generated successfully");
+    }
+
+    @GetMapping("/{id}/download")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get document download url", description = "Generates a temporary presigned S3 URL for downloading the document. Always requires authentication.")
+    public ApiResponse<DocumentAccessResponse> getDownloadUrl(
+            @Parameter(description = "Document UUID", required = true) @PathVariable("id") UUID id) {
+        log.info("Received request to download document ID: {}", id);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()
+                || (authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+
+        DocumentAccessResponse response = documentService.getDownloadAccess(id, userDetails);
+        return ApiResponse.success(response, "Document download access generated successfully");
     }
 }
