@@ -3,12 +3,14 @@ package vn.ai_study_hub_api.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.client.WebClient;
+import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -239,5 +241,42 @@ public class DocumentServiceImpl implements DocumentService {
             return "";
         }
         return filename.substring(filename.lastIndexOf('.') + 1);
+    }
+
+    @Override
+    @Transactional
+    public DocumentEntity generateShareLink(UUID documentId, UUID userId) {
+        log.info("Generating share link for document ID: {}, user ID: {}", documentId, userId);
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        if (!document.getUploader().getId().equals(userId)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
+        }
+
+        String token = "doc-" + UUID.randomUUID().toString();
+        document.setLinkShare(token);
+
+        return documentRepository.save(document);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentEntity getSharedDocument(String token) {
+        log.info("Retrieving shared document for token: {}", token);
+
+        DocumentEntity document = documentRepository.findByLinkShare(token)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Shared document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Shared document not found");
+        }
+
+        return document;
     }
 }

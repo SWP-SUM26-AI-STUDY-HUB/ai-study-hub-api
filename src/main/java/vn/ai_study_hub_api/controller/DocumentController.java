@@ -15,9 +15,12 @@ import vn.ai_study_hub_api.controller.request.DocumentUploadRequest;
 import vn.ai_study_hub_api.controller.response.DocumentUploadResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.DocumentEntity;
+import vn.ai_study_hub_api.controller.response.DocumentShareResponse;
+import vn.ai_study_hub_api.controller.response.DocumentSharedPreviewResponse;
 import vn.ai_study_hub_api.model.DocumentVisibility;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.DocumentService;
+import vn.ai_study_hub_api.service.UploadProvider;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +35,7 @@ import java.util.UUID;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final UploadProvider uploadProvider;
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.OK)
@@ -89,5 +93,70 @@ public class DocumentController {
             log.warn("Invalid upload arguments: {}", e.getMessage());
             throw new AppException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    @PostMapping("/{documentId}/share")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Generate a read-only share link", description = "Generates a unique cryptographic hash/UUID token and returns a public preview URL.")
+    public ApiResponse<DocumentShareResponse> generateShareLink(
+            @PathVariable("documentId") UUID documentId) {
+        
+        log.info("Request to generate share link for document ID: {}", documentId);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized share link generation attempt");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        DocumentEntity document = documentService.generateShareLink(documentId, userId);
+
+        DocumentShareResponse response = DocumentShareResponse.builder()
+                .token(document.getLinkShare())
+                .shareUrl("https://aistudyhub.com/shared/" + document.getLinkShare())
+                .build();
+
+        return ApiResponse.success(response, "Share link generated successfully");
+    }
+
+    @GetMapping("/shared/{token}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Preview a shared document", description = "Retrieves metadata and S3 presigned preview URL for a shared document using its token.")
+    public ApiResponse<DocumentSharedPreviewResponse> getSharedDocumentPreview(
+            @PathVariable("token") String token) {
+        
+        log.info("Request to preview shared document with token: {}", token);
+
+        DocumentEntity document = documentService.getSharedDocument(token);
+
+        String previewUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
+
+        java.util.List<String> tags = java.util.Collections.emptyList();
+        if (document.getTags() != null) {
+            tags = document.getTags().stream()
+                    .map(vn.ai_study_hub_api.model.TagEntity::getLabel)
+                    .collect(java.util.stream.Collectors.toList());
+        }
+
+        String uploaderName = document.getUploader().getFullName();
+        if (uploaderName == null || uploaderName.trim().isEmpty()) {
+            uploaderName = document.getUploader().getEmail();
+        }
+
+        DocumentSharedPreviewResponse response = DocumentSharedPreviewResponse.builder()
+                .id(document.getId())
+                .title(document.getTitle())
+                .description(document.getDescription())
+                .summary(document.getSummary())
+                .fileType(document.getFileType())
+                .fileSizeBytes(document.getFileSizeBytes())
+                .uploaderName(uploaderName)
+                .tags(tags)
+                .previewUrl(previewUrl)
+                .build();
+
+        return ApiResponse.success(response, "Shared document details retrieved successfully");
     }
 }

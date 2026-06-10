@@ -13,4 +13,8 @@ public interface DocumentService {
     void processDocumentAsync(UUID documentId, File tempFile, String storagePath, String contentType);
 
     void handleFastApiCallback(UUID documentId, String status, String summary);
+
+    DocumentEntity generateShareLink(UUID documentId, UUID userId);
+
+    DocumentEntity getSharedDocument(String token);
 }

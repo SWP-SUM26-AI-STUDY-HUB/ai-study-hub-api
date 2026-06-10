@@ -74,6 +74,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/social-login",
                                 "/api/v1/auth/**",
                                 "/api/v1/internal/**",
+                                "/api/v1/documents/shared/**",
                                 "/api/internal/**",
                                 "/login/oauth2/**",
                                 "/swagger-ui/**",
