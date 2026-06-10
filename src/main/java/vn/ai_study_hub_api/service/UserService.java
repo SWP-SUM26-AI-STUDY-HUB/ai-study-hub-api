@@ -10,4 +10,5 @@ public interface UserService {
 
     List<UserResponse> getAllUsers();
     UserEntity createOrUpdateUserFromOAuth2(String email, String fullName, String avatarUrl, String googleId );
+    UserResponse updateProfile(java.util.UUID userId, String fullName, org.springframework.web.multipart.MultipartFile avatar);
 }

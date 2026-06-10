@@ -7,13 +7,23 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.request.*;
+import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.response.LoginResponse;
 import vn.ai_study_hub_api.controller.request.LoginRequest;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.multipart.MultipartFile;
 import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
+import vn.ai_study_hub_api.controller.response.UserResponse;
+import vn.ai_study_hub_api.exception.AppException;
+import vn.ai_study_hub_api.security.CustomUserDetails;
+import vn.ai_study_hub_api.service.UserService;
+import java.util.UUID;
 
 
 @RestController
@@ -22,10 +32,12 @@ import vn.ai_study_hub_api.controller.request.RefreshTokenRequest;
 public class AuthController {
 
     private final AuthService authService;
+    private final UserService userService;
 
     @Autowired
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, UserService userService) {
         this.authService = authService;
+        this.userService = userService;
     }
 
 
@@ -137,5 +149,26 @@ public class AuthController {
         // Tham số 1 (Data): Chuỗi thông báo thành công cho mục "data"
         // Tham số 2 (Message): Chuỗi hiển thị ở mục "message"
         return ApiResponse.success("Password has been reset successfully!", "Request processed successfully.");
+    }
+
+    @PutMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Edit user profile", description = "Update user fullName and/or upload avatar image to AWS S3")
+    public ApiResponse<UserResponse> editProfile(
+            @Parameter(description = "Display name / Full name of the user", example = "John Doe")
+            @RequestParam(value = "fullName", required = false) String fullName,
+            @Parameter(description = "Avatar image file (JPEG/PNG, max 2MB)")
+            @RequestParam(value = "avatar", required = false) MultipartFile avatar) {
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        UserResponse updatedUser = userService.updateProfile(userId, fullName, avatar);
+
+        return ApiResponse.success(updatedUser, "Profile updated successfully.");
     }
 }
