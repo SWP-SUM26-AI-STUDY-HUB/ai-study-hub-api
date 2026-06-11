@@ -26,4 +26,6 @@ public interface DocumentService {
      * the keyword in title, description, summary, or tag labels.
      */
     List<DocumentResponse> searchPublicDocuments(String keyword);
+
+    void deleteDocument(UUID documentId, UUID userId);
 }

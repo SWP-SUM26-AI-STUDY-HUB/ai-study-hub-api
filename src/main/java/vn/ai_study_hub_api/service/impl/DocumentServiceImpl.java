@@ -141,6 +141,11 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
                     .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
 
+            if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+                log.info("Document ID {} has been deleted, skipping storage and FastAPI processing", documentId);
+                return;
+            }
+
             // Update user storage usage
             UserEntity uploader = document.getUploader();
             if (uploader != null) {
@@ -385,5 +390,37 @@ public class DocumentServiceImpl implements DocumentService {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void deleteDocument(UUID documentId, UUID userId) {
+        log.info("Deleting document ID: {}, requested by user ID: {}", documentId, userId);
+
+        DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        if (!document.getUploader().getId().equals(userId)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
+        }
+
+        DocumentStatus originalStatus = document.getStatus();
+        document.setDeletedAt(java.time.LocalDateTime.now());
+        document.setStatus(DocumentStatus.DELETED);
+
+        if (!DocumentStatus.UPLOADING.equals(originalStatus)) {
+            UserEntity uploader = document.getUploader();
+            long newStorageUsed = Math.max(0L, uploader.getStorageUsed() - document.getFileSizeBytes());
+            uploader.setStorageUsed(newStorageUsed);
+            userRepository.save(uploader);
+            log.info("Subtracted {} bytes from user {} storage. New storage: {} bytes", 
+                    document.getFileSizeBytes(), uploader.getId(), newStorageUsed);
+        }
+
+        documentRepository.save(document);
     }
 }
