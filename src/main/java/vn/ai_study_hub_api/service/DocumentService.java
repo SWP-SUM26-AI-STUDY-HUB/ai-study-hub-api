@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 public interface DocumentService {
-    DocumentEntity initiateUpload(MultipartFile file, String title, List<Integer> tagIds, String description, DocumentVisibility visibility, UUID userId);
+    DocumentEntity initiateUpload(MultipartFile file, String title, List<String> tags, String description, DocumentVisibility visibility, UUID userId);
 
     void processDocumentAsync(UUID documentId, File tempFile, String storagePath, String contentType);
 
