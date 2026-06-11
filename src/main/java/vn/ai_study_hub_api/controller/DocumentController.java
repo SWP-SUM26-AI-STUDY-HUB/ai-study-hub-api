@@ -46,7 +46,7 @@ public class    DocumentController {
             @ModelAttribute DocumentUploadRequest request) {
         
         log.info("Received request to upload file: {} with metadata: title='{}', tags={}, visibility={}", 
-                file.getOriginalFilename(), request.getTitle(), request.getTagIds(), request.getVisibility());
+                file.getOriginalFilename(), request.getTitle(), request.getTags(), request.getVisibility());
 
         // Get authenticated user ID
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -62,7 +62,7 @@ public class    DocumentController {
             DocumentEntity document = documentService.initiateUpload(
                     file, 
                     request.getTitle(), 
-                    request.getTagIds(), 
+                    request.getTags(), 
                     request.getDescription(), 
                     request.getVisibility(), 
                     userId

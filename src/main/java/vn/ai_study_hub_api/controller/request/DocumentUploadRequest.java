@@ -14,8 +14,8 @@ public class DocumentUploadRequest {
     @Schema(description = "The title of the document", example = "Spring Boot Tutorial", requiredMode = Schema.RequiredMode.REQUIRED)
     private String title;
 
-    @Schema(description = "List of tag IDs associated with the document", example = "[1, 2]", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-    private List<Integer> tagIds;
+    @Schema(description = "List of tag names/labels associated with the document", example = "[\"LinearAlgebra\", \"MidtermExam\"]", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+    private List<String> tags;
 
     @Schema(description = "Detailed description of the document", example = "An introductory guide to building REST APIs with Spring Boot", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
     private String description;

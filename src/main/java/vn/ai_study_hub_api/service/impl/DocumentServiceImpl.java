@@ -53,8 +53,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
-    public DocumentEntity initiateUpload(MultipartFile file, String title, List<Integer> tagIds, String description, DocumentVisibility visibility, UUID userId) {
-        log.info("Initiating upload for file: {}, user: {}, tags: {}, title: {}, visibility: {}", file.getOriginalFilename(), userId, tagIds, title, visibility);
+    public DocumentEntity initiateUpload(MultipartFile file, String title, List<String> tags, String description, DocumentVisibility visibility, UUID userId) {
+        log.info("Initiating upload for file: {}, user: {}, tags: {}, title: {}, visibility: {}", file.getOriginalFilename(), userId, tags, title, visibility);
  
         // Retrieve uploader user
         UserEntity uploader = userRepository.findById(userId)
@@ -83,7 +83,21 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         // Retrieve and validate tags
-        List<TagEntity> tags = tagRepository.findAllById(tagIds);
+        List<TagEntity> tagEntities = new java.util.ArrayList<>();
+        if (tags != null) {
+            for (String tag : tags) {
+                if (tag == null || tag.trim().isEmpty()) {
+                    continue;
+                }
+                String trimmedTag = tag.trim();
+                if (trimmedTag.length() > 30) {
+                    throw new IllegalArgumentException("Tag length cannot exceed 30 characters");
+                }
+                TagEntity tagEntity = tagRepository.findByLabel(trimmedTag)
+                        .orElseGet(() -> tagRepository.save(TagEntity.builder().label(trimmedTag).build()));
+                tagEntities.add(tagEntity);
+            }
+        }
  
         // Pre-generate document ID for path consistency
         UUID documentId = UUID.randomUUID();
@@ -108,7 +122,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .status(DocumentStatus.UPLOADING)
                 .description(description)
                 .visibility(visibility != null ? visibility : DocumentVisibility.PRIVATE)
-                .tags(tags)
+                .tags(tagEntities)
                 .build();
 
         return documentRepository.save(document);

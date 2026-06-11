@@ -60,9 +60,21 @@ public class DocumentEditServiceImpl implements DocumentEditService {
             document.setDescription(request.getDescription());
         }
 
-        if (request.getTagIds() != null && !request.getTagIds().isEmpty()) {
-            List<TagEntity> tags = tagRepository.findAllById(request.getTagIds());
-            document.setTags(tags);
+        if (request.getTags() != null) {
+            List<TagEntity> tagEntities = new java.util.ArrayList<>();
+            for (String tag : request.getTags()) {
+                if (tag == null || tag.trim().isEmpty()) {
+                    continue;
+                }
+                String trimmedTag = tag.trim();
+                if (trimmedTag.length() > 30) {
+                    throw new AppException(HttpStatus.BAD_REQUEST, "Tag length cannot exceed 30 characters");
+                }
+                TagEntity tagEntity = tagRepository.findByLabel(trimmedTag)
+                        .orElseGet(() -> tagRepository.save(TagEntity.builder().label(trimmedTag).build()));
+                tagEntities.add(tagEntity);
+            }
+            document.setTags(tagEntities);
         }
 
         if (request.getVisibility() != null) {

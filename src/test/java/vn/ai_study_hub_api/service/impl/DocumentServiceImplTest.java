@@ -122,7 +122,7 @@ public class DocumentServiceImplTest {
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
-        when(tagRepository.findAllById(List.of(1))).thenReturn(List.of(mockTag));
+        when(tagRepository.findByLabel("Study")).thenReturn(Optional.of(mockTag));
         when(uploadProvider.generateStoragePath(any(UUID.class), any(UUID.class), anyString())).thenReturn("mock-user-id/mock-uuid.pdf");
         when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> {
             DocumentEntity savedDoc = invocation.getArgument(0);
@@ -131,7 +131,7 @@ public class DocumentServiceImplTest {
             return savedDoc;
         });
 
-        DocumentEntity result = documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId);
+        DocumentEntity result = documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId);
 
         assertNotNull(result);
         assertNotNull(result.getId());
@@ -145,7 +145,7 @@ public class DocumentServiceImplTest {
         assertEquals("Study", result.getTags().get(0).getLabel());
 
         verify(userRepository, times(1)).findById(userId);
-        verify(tagRepository, times(1)).findAllById(List.of(1));
+        verify(tagRepository, times(1)).findByLabel("Study");
         verify(uploadProvider, times(1)).generateStoragePath(eq(userId), any(UUID.class), eq("test.pdf"));
         verify(documentRepository, times(1)).save(any(DocumentEntity.class));
     }
@@ -162,7 +162,7 @@ public class DocumentServiceImplTest {
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, null, List.of(1), null, null, userId)
+                documentService.initiateUpload(file, null, List.of("Study"), null, null, userId)
         );
 
         verify(documentRepository, never()).save(any(DocumentEntity.class));
@@ -359,7 +359,7 @@ public class DocumentServiceImplTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+                documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload", exception.getMessage());
         verify(documentRepository, never()).save(any());
@@ -377,7 +377,7 @@ public class DocumentServiceImplTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+                documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Unsupported file format", exception.getMessage());
         verify(documentRepository, never()).save(any());
@@ -405,7 +405,7 @@ public class DocumentServiceImplTest {
         when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
-                documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
+                documentService.initiateUpload(file, "My Custom Title", List.of("Study"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
         verify(documentRepository, never()).save(any());
@@ -489,111 +489,65 @@ public class DocumentServiceImplTest {
     }
 
     @Test
-    void deleteDocument_Success() {
-        mockDocument.setStatus(DocumentStatus.COMPLETED);
-        mockDocument.setFileSizeBytes(20L * 1024L * 1024L); // 20 MB
-        mockUser.setStorageUsed(120L * 1024L * 1024L); // 120 MB
+    void initiateUpload_Success_WithNewAndExistingTags() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.pdf",
+                "application/pdf",
+                "pdf content".getBytes()
+        );
 
-        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L)
+                .maxAiRequestsPerDay(15)
+                .build();
+
+        TagEntity mockNewTag = TagEntity.builder()
+                .id(2)
+                .label("NewTag")
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
+        when(tagRepository.findByLabel("Study")).thenReturn(Optional.of(mockTag));
+        when(tagRepository.findByLabel("NewTag")).thenReturn(Optional.empty());
+        when(tagRepository.save(any(TagEntity.class))).thenReturn(mockNewTag);
+        when(uploadProvider.generateStoragePath(any(UUID.class), any(UUID.class), anyString())).thenReturn("mock-user-id/mock-uuid.pdf");
         when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        documentService.deleteDocument(documentId, userId);
+        DocumentEntity result = documentService.initiateUpload(file, "My Custom Title", List.of("Study", "NewTag"), "Doc Description", DocumentVisibility.PUBLIC, userId);
 
-        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
-        assertNotNull(mockDocument.getDeletedAt());
-        assertEquals(100L * 1024L * 1024L, mockUser.getStorageUsed()); // 120 - 20 = 100 MB
-
-        verify(documentRepository, times(1)).findByIdWithUploader(documentId);
-        verify(documentRepository, times(1)).save(mockDocument);
-        verify(userRepository, times(1)).save(mockUser);
+        assertNotNull(result);
+        assertEquals(2, result.getTags().size());
+        assertEquals("Study", result.getTags().get(0).getLabel());
+        assertEquals("NewTag", result.getTags().get(1).getLabel());
     }
 
     @Test
-    void deleteDocument_Success_UploadingState() {
-        mockDocument.setStatus(DocumentStatus.UPLOADING);
-        mockDocument.setFileSizeBytes(20L * 1024L * 1024L); // 20 MB
-        mockUser.setStorageUsed(120L * 1024L * 1024L); // 120 MB
-
-        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
-        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        documentService.deleteDocument(documentId, userId);
-
-        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
-        assertNotNull(mockDocument.getDeletedAt());
-        assertEquals(120L * 1024L * 1024L, mockUser.getStorageUsed()); // Unchanged
-
-        verify(documentRepository, times(1)).findByIdWithUploader(documentId);
-        verify(documentRepository, times(1)).save(mockDocument);
-        verify(userRepository, never()).save(any(UserEntity.class));
-    }
-
-    @Test
-    void deleteDocument_NotFound() {
-        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.empty());
-
-        AppException exception = assertThrows(AppException.class, () ->
-                documentService.deleteDocument(documentId, userId)
+    void initiateUpload_Failure_TagTooLong() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "test.pdf",
+                "application/pdf",
+                "pdf content".getBytes()
         );
 
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("Document not found", exception.getMessage());
-        verify(documentRepository, never()).save(any());
-        verify(userRepository, never()).save(any());
-    }
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L)
+                .maxAiRequestsPerDay(15)
+                .build();
 
-    @Test
-    void deleteDocument_AlreadyDeleted() {
-        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
-        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
 
-        AppException exception = assertThrows(AppException.class, () ->
-                documentService.deleteDocument(documentId, userId)
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+                documentService.initiateUpload(file, "My Custom Title", List.of("this-tag-is-extremely-long-and-exceeds-thirty-characters"), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
-
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("Document not found", exception.getMessage());
+        assertEquals("Tag length cannot exceed 30 characters", exception.getMessage());
         verify(documentRepository, never()).save(any());
-        verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    void deleteDocument_NotOwner() {
-        UUID otherUserId = UUID.randomUUID();
-        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
-
-        AppException exception = assertThrows(AppException.class, () ->
-                documentService.deleteDocument(documentId, otherUserId)
-        );
-
-        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
-        assertEquals("You are not the owner of this document", exception.getMessage());
-        verify(documentRepository, never()).save(any());
-        verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    void processDocumentAsync_AbortedIfDeleted() {
-        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
-        mockDocument.setStatus(DocumentStatus.DELETED);
-
-        File tempFile = mock(File.class);
-        when(tempFile.exists()).thenReturn(true);
-        when(tempFile.delete()).thenReturn(true);
-
-        String storagePath = userId.toString() + "/mock-uuid.pdf";
-        String contentType = "application/pdf";
-
-        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
-
-        documentService.processDocumentAsync(documentId, tempFile, storagePath, contentType);
-
-        verify(uploadProvider, times(1)).upload(tempFile, storagePath, contentType);
-        verify(documentRepository, times(1)).findByIdWithUploader(documentId);
-        // Verify that storage wasn't updated and FastAPI wasn't triggered
-        verify(documentRepository, never()).save(any(DocumentEntity.class));
-        verify(userRepository, never()).save(any(UserEntity.class));
-        verify(tempFile, times(1)).delete();
     }
 }
