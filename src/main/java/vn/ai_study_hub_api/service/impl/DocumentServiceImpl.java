@@ -186,6 +186,7 @@ public class DocumentServiceImpl implements DocumentService {
                         .bodyValue(payload)
                         .retrieve()
                         .toBodilessEntity()
+                        .timeout(java.time.Duration.ofSeconds(10))
                         .block(); // Synchronous block inside the async worker thread is safe
 
                 log.info("FastAPI webhook successfully triggered for document ID: {}", documentId);

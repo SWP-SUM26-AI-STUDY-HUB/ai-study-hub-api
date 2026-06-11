@@ -8,6 +8,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import java.net.URI;
 
@@ -28,10 +29,15 @@ public class AwsS3Config {
 
     @Bean
     public S3Client s3Client() {
+        S3Configuration s3Configuration = S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .build();
+
         S3ClientBuilder builder = S3Client.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(accessKey, secretKey)))
-                .region(Region.of(region));
+                .region(Region.of(region))
+                .serviceConfiguration(s3Configuration);
 
         if (endpoint != null && !endpoint.trim().isEmpty()) {
             builder.endpointOverride(URI.create(endpoint));
@@ -42,10 +48,15 @@ public class AwsS3Config {
 
     @Bean
     public S3Presigner s3Presigner() {
+        S3Configuration s3Configuration = S3Configuration.builder()
+                .pathStyleAccessEnabled(true)
+                .build();
+
         S3Presigner.Builder builder = S3Presigner.builder()
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(accessKey, secretKey)))
-                .region(Region.of(region));
+                .region(Region.of(region))
+                .serviceConfiguration(s3Configuration);
 
         if (endpoint != null && !endpoint.trim().isEmpty()) {
             builder.endpointOverride(URI.create(endpoint));
