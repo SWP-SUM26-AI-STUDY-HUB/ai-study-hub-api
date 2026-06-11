@@ -229,4 +229,42 @@ public class    DocumentController {
 
         return ApiResponse.success("Document deleted successfully");
     }
+
+    @GetMapping("/{id}/preview")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get document preview url", description = "Generates a temporary presigned S3 URL for viewing the document. Guests can access it if the document is public and completed.")
+    public ApiResponse<vn.ai_study_hub_api.controller.response.DocumentAccessResponse> getPreviewUrl(
+            @Parameter(description = "Document UUID", required = true) @PathVariable("id") UUID id) {
+        log.info("Received request to preview document ID: {}", id);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        CustomUserDetails userDetails = null;
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            userDetails = (CustomUserDetails) authentication.getPrincipal();
+        }
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getPreviewAccess(id, userDetails);
+        return ApiResponse.success(response, "Document preview access generated successfully");
+    }
+
+    @GetMapping("/{id}/download")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get document download url", description = "Generates a temporary presigned S3 URL for downloading the document. Always requires authentication.")
+    public ApiResponse<vn.ai_study_hub_api.controller.response.DocumentAccessResponse> getDownloadUrl(
+            @Parameter(description = "Document UUID", required = true) @PathVariable("id") UUID id) {
+        log.info("Received request to download document ID: {}", id);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()
+                || (authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getDownloadAccess(id, userDetails);
+        return ApiResponse.success(response, "Document download access generated successfully");
+    }
 }

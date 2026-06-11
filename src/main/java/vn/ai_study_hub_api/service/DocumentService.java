@@ -28,4 +28,8 @@ public interface DocumentService {
     List<DocumentResponse> searchPublicDocuments(String keyword);
 
     void deleteDocument(UUID documentId, UUID userId);
+
+    vn.ai_study_hub_api.controller.response.DocumentAccessResponse getPreviewAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
+
+    vn.ai_study_hub_api.controller.response.DocumentAccessResponse getDownloadAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
 }

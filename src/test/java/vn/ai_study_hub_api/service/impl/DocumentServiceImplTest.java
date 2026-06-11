@@ -550,4 +550,378 @@ public class DocumentServiceImplTest {
         assertEquals("Tag length cannot exceed 30 characters", exception.getMessage());
         verify(documentRepository, never()).save(any());
     }
+
+    @Test
+    void getPreviewAccess_PublicCompleted_GuestSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .fileUrl("owner-id/doc-id.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/public.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getPreviewAccess(docId, null);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getDocumentId());
+        assertEquals("Public Doc", response.getTitle());
+        assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
+        verify(documentRepository, times(1)).findById(docId);
+        verify(uploadProvider, times(1)).generatePresignedUrl(doc.getFileUrl());
+    }
+
+    @Test
+    void getPreviewAccess_PublicCompleted_AuthenticatedSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .fileUrl("owner-id/doc-id.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "other@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/public.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getPreviewAccess(docId, otherUserDetails);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getDocumentId());
+        assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getPreviewAccess_Private_GuestUnauthorized() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getPreviewAccess(docId, null)
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
+        verify(uploadProvider, never()).generatePresignedUrl(anyString());
+    }
+
+    @Test
+    void getPreviewAccess_Private_OwnerSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                userId,
+                "owner@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/private.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getPreviewAccess(docId, ownerDetails);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getDocumentId());
+        assertEquals("https://presigned-url/private.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getPreviewAccess_Private_AdminSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails adminDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "admin@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/private-admin.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getPreviewAccess(docId, adminDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned-url/private-admin.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getPreviewAccess_Private_NonOwnerForbidden() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "other@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getPreviewAccess(docId, otherUserDetails)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        verify(uploadProvider, never()).generatePresignedUrl(anyString());
+    }
+
+    @Test
+    void getPreviewAccess_DocumentNotFound() {
+        UUID docId = UUID.randomUUID();
+        when(documentRepository.findById(docId)).thenReturn(Optional.empty());
+
+        vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                userId,
+                "owner@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getPreviewAccess(docId, ownerDetails)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getPreviewAccess_DocumentDeleted() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .deletedAt(java.time.LocalDateTime.now())
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                userId,
+                "owner@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getPreviewAccess(docId, ownerDetails)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getDownloadAccess_GuestUnauthorized() {
+        UUID docId = UUID.randomUUID();
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDownloadAccess(docId, null)
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
+        verify(documentRepository, never()).findById(any());
+    }
+
+    @Test
+    void getDownloadAccess_PublicCompleted_Success() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .fileUrl("owner-id/doc-id.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "other@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/download.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getDownloadAccess(docId, otherUserDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned-url/download.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getDownloadAccess_Private_OwnerSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                userId,
+                "owner@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/download-owner.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getDownloadAccess(docId, ownerDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned-url/download-owner.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getDownloadAccess_Private_AdminSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails adminDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "admin@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
+                .thenReturn("https://presigned-url/download-admin.pdf");
+
+        vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getDownloadAccess(docId, adminDetails);
+
+        assertNotNull(response);
+        assertEquals("https://presigned-url/download-admin.pdf", response.getPresignedUrl());
+    }
+
+    @Test
+    void getDownloadAccess_Private_NonOwnerForbidden() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .fileUrl("owner-id/doc-id-private.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(2048L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "other@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDownloadAccess(docId, otherUserDetails)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+        verify(uploadProvider, never()).generatePresignedUrl(anyString());
+    }
 }
+
