@@ -66,7 +66,7 @@ public class ReportServiceImpl implements ReportService {
                 .documentId(documentId)
                 .reason(report.getReason())
                 .status(report.getStatus().name())
-                .createdAt(report.getCreatedAt())
+                .createdAt(report.getCreatedAt() != null ? report.getCreatedAt() : java.time.LocalDateTime.now())
                 .build();
     }
 

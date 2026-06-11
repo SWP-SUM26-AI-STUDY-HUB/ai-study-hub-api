@@ -23,5 +23,7 @@ public class DocumentResponse {
     private String description;
     private List<String> tags;
     private String uploaderName;
+    private UploaderResponse uploader;
+    private String visibility;
     private LocalDateTime createdAt;
 }
