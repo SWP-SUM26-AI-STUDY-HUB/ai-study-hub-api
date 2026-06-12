@@ -294,13 +294,14 @@ For testing edge cases related to permissions and storage limits:
 - **Given** A document has visibility `'public'` and status `'active'`.
 - **When** A guest user or any logged-in user clicks on the document to preview it.
 - **Then** The system renders the document preview in the browser within 3.0 seconds without downloading.
+- **And** The response data includes the document ID, title, file type, file size in bytes, S3 presigned URL, created timestamp (`created_at`), and description.
 
 #### Scenario 2: Guest prompted to log in before downloading a public file (Alternative Path)
 - **Given** A guest user is previewing a public document.
 - **When** The guest clicks the "Download" button.
 - **Then** The system blocks the download.
 - **And** The system displays a Login Popup prompting the guest to sign in.
-- **And** Once the user successfully signs in, the download starts automatically.
+- **And** Once the user successfully signs in, the download starts automatically, and the response data includes the document ID, title, file type, file size in bytes, S3 presigned URL, created timestamp (`created_at`), and description.
 
 #### Scenario 3: Non-owners blocked from accessing private, pending, or rejected files (Edge Case)
 - **Given** Document A owned by User X has visibility `'private'`, `'pending'`, or `'rejected'`.

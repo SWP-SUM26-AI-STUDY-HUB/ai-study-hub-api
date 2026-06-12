@@ -501,6 +501,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileType(document.getFileType())
                 .fileSizeBytes(document.getFileSizeBytes())
                 .presignedUrl(presignedUrl)
+                .createdAt(document.getCreatedAt())
+                .description(document.getDescription())
                 .build();
     }
 
@@ -546,6 +548,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileType(document.getFileType())
                 .fileSizeBytes(document.getFileSizeBytes())
                 .presignedUrl(presignedUrl)
+                .createdAt(document.getCreatedAt())
+                .description(document.getDescription())
                 .build();
     }
 }

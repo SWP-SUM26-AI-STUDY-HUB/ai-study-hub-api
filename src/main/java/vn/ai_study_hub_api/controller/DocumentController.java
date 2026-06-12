@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -36,6 +37,9 @@ public class    DocumentController {
 
     private final DocumentService documentService;
     private final UploadProvider uploadProvider;
+
+    @Value("${app.share-url-prefix}")
+    private String shareUrlPrefix;
 
     @PostMapping(value = "/upload", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.OK)
@@ -114,7 +118,7 @@ public class    DocumentController {
 
         DocumentShareResponse response = DocumentShareResponse.builder()
                 .token(document.getLinkShare())
-                .shareUrl("https://aistudyhub.com/shared/" + document.getLinkShare())
+                .shareUrl(shareUrlPrefix + document.getLinkShare())
                 .build();
 
         return ApiResponse.success(response, "Share link generated successfully");
@@ -154,6 +158,7 @@ public class    DocumentController {
                 .uploaderName(uploaderName)
                 .tags(tags)
                 .previewUrl(previewUrl)
+                .createdAt(document.getCreatedAt())
                 .build();
 
         return ApiResponse.success(response, "Shared document details retrieved successfully");

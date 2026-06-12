@@ -29,6 +29,7 @@ import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
 
 import java.io.File;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -560,6 +561,7 @@ public class DocumentServiceImplTest {
     @Test
     void getPreviewAccess_PublicCompleted_GuestSuccess() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -569,6 +571,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(1024L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PUBLIC)
+                .createdAt(testCreatedAt)
+                .description("Math test document")
                 .build();
 
         when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
@@ -581,6 +585,8 @@ public class DocumentServiceImplTest {
         assertEquals(docId, response.getDocumentId());
         assertEquals("Public Doc", response.getTitle());
         assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Math test document", response.getDescription());
         verify(documentRepository, times(1)).findById(docId);
         verify(uploadProvider, times(1)).generatePresignedUrl(doc.getFileUrl());
     }
@@ -588,6 +594,7 @@ public class DocumentServiceImplTest {
     @Test
     void getPreviewAccess_PublicCompleted_AuthenticatedSuccess() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -597,6 +604,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(1024L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PUBLIC)
+                .createdAt(testCreatedAt)
+                .description("Math test document")
                 .build();
 
         vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
@@ -616,6 +625,8 @@ public class DocumentServiceImplTest {
         assertNotNull(response);
         assertEquals(docId, response.getDocumentId());
         assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Math test document", response.getDescription());
     }
 
     @Test
@@ -645,6 +656,7 @@ public class DocumentServiceImplTest {
     @Test
     void getPreviewAccess_Private_OwnerSuccess() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -654,6 +666,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(2048L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PRIVATE)
+                .createdAt(testCreatedAt)
+                .description("Private description")
                 .build();
 
         vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
@@ -673,11 +687,14 @@ public class DocumentServiceImplTest {
         assertNotNull(response);
         assertEquals(docId, response.getDocumentId());
         assertEquals("https://presigned-url/private.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Private description", response.getDescription());
     }
 
     @Test
     void getPreviewAccess_Private_AdminSuccess() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -687,6 +704,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(2048L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PRIVATE)
+                .createdAt(testCreatedAt)
+                .description("Private description")
                 .build();
 
         vn.ai_study_hub_api.security.CustomUserDetails adminDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
@@ -705,6 +724,8 @@ public class DocumentServiceImplTest {
 
         assertNotNull(response);
         assertEquals("https://presigned-url/private-admin.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Private description", response.getDescription());
     }
 
     @Test
@@ -805,6 +826,7 @@ public class DocumentServiceImplTest {
     @Test
     void getDownloadAccess_PublicCompleted_Success() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -814,6 +836,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(1024L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PUBLIC)
+                .createdAt(testCreatedAt)
+                .description("Math test document")
                 .build();
 
         vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
@@ -832,11 +856,14 @@ public class DocumentServiceImplTest {
 
         assertNotNull(response);
         assertEquals("https://presigned-url/download.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Math test document", response.getDescription());
     }
 
     @Test
     void getDownloadAccess_Private_OwnerSuccess() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -846,6 +873,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(2048L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PRIVATE)
+                .createdAt(testCreatedAt)
+                .description("Private description")
                 .build();
 
         vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
@@ -864,11 +893,14 @@ public class DocumentServiceImplTest {
 
         assertNotNull(response);
         assertEquals("https://presigned-url/download-owner.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Private description", response.getDescription());
     }
 
     @Test
     void getDownloadAccess_Private_AdminSuccess() {
         UUID docId = UUID.randomUUID();
+        LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -878,6 +910,8 @@ public class DocumentServiceImplTest {
                 .fileSizeBytes(2048L)
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PRIVATE)
+                .createdAt(testCreatedAt)
+                .description("Private description")
                 .build();
 
         vn.ai_study_hub_api.security.CustomUserDetails adminDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
@@ -896,6 +930,8 @@ public class DocumentServiceImplTest {
 
         assertNotNull(response);
         assertEquals("https://presigned-url/download-admin.pdf", response.getPresignedUrl());
+        assertEquals(testCreatedAt, response.getCreatedAt());
+        assertEquals("Private description", response.getDescription());
     }
 
     @Test
