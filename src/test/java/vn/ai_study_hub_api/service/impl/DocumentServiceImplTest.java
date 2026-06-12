@@ -304,6 +304,7 @@ public class DocumentServiceImplTest {
     @Test
     void getPersonalDocuments_Success() {
         mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.ACTIVE);
+        mockDocument.setDescription("Test description");
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
@@ -313,6 +314,11 @@ public class DocumentServiceImplTest {
         assertEquals(1, result.size());
         assertEquals(mockDocument.getId(), result.get(0).getId());
         assertEquals(mockDocument.getTitle(), result.get(0).getTitle());
+        assertEquals("pdf", result.get(0).getFileType());
+        assertEquals("Test description", result.get(0).getDescription());
+        assertNotNull(result.get(0).getTags());
+        assertEquals(1, result.get(0).getTags().size());
+        assertEquals("Study", result.get(0).getTags().get(0));
 
         verify(userRepository, times(1)).findById(userId);
         verify(documentRepository, times(1)).findActiveDocumentsByUploaderId(userId);
@@ -922,6 +928,47 @@ public class DocumentServiceImplTest {
 
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
         verify(uploadProvider, never()).generatePresignedUrl(anyString());
+    }
+
+    @Test
+    void searchPublicDocuments_Success() {
+        String keyword = "test";
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        when(documentRepository.searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED))
+                .thenReturn(List.of(mockDocument));
+
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.searchPublicDocuments(keyword);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(mockDocument.getId(), result.get(0).getId());
+
+        verify(documentRepository, times(1)).searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED);
+    }
+
+    @Test
+    void searchPublicDocuments_NotFound() {
+        String keyword = "notfound";
+        when(documentRepository.searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED))
+                .thenReturn(List.of());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.searchPublicDocuments(keyword)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("No documents found matching the keyword.", exception.getMessage());
+        verify(documentRepository, times(1)).searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED);
+    }
+
+    @Test
+    void searchPublicDocuments_EmptyKeyword() {
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.searchPublicDocuments("   ");
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+        verify(documentRepository, never()).searchPublicDocuments(anyString(), any(), any());
     }
 }
 

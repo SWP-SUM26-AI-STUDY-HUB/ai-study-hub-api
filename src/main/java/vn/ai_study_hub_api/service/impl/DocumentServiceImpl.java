@@ -303,6 +303,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<DocumentResponse> getPersonalDocuments(UUID userId) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new vn.ai_study_hub_api.exception.AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
@@ -313,15 +314,44 @@ public class DocumentServiceImpl implements DocumentService {
 
         return documentRepository.findActiveDocumentsByUploaderId(userId)
                 .stream()
-                .map(doc -> DocumentResponse.builder()
-                        .id(doc.getId())
-                        .title(doc.getTitle())
-                        .fileName(doc.getTitle())
-                        .fileUrl(doc.getFileUrl())
-                        .fileSize(doc.getFileSizeBytes())
-                        .status(doc.getStatus() != null ? doc.getStatus().name() : null)
-                        .createdAt(doc.getCreatedAt())
-                        .build())
+                .map(doc -> {
+                    String uploaderName = null;
+                    vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
+                    if (doc.getUploader() != null) {
+                        uploaderName = doc.getUploader().getFullName();
+                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
+                            uploaderName = doc.getUploader().getEmail();
+                        }
+                        uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
+                                .id(doc.getUploader().getId())
+                                .fullName(doc.getUploader().getFullName())
+                                .avatarUrl(doc.getUploader().getAvatarUrl())
+                                .build();
+                    }
+
+                    List<String> tagLabels = null;
+                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
+                        tagLabels = doc.getTags().stream()
+                                .map(TagEntity::getLabel)
+                                .collect(Collectors.toList());
+                    }
+
+                    return DocumentResponse.builder()
+                            .id(doc.getId())
+                            .title(doc.getTitle())
+                            .fileName(doc.getTitle())
+                            .fileUrl(doc.getFileUrl())
+                            .fileSize(doc.getFileSizeBytes())
+                            .fileType(doc.getFileType())
+                            .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                            .description(doc.getDescription())
+                            .tags(tagLabels)
+                            .uploaderName(uploaderName)
+                            .uploader(uploaderResponse)
+                            .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
+                            .createdAt(doc.getCreatedAt())
+                            .build();
+                })
                 .collect(Collectors.toList());
     }
 
@@ -356,6 +386,10 @@ public class DocumentServiceImpl implements DocumentService {
         );
 
         log.info("Found {} public documents matching keyword '{}'", results.size(), trimmedKeyword);
+
+        if (results.isEmpty()) {
+            throw new AppException(HttpStatus.NOT_FOUND, "No documents found matching the keyword.");
+        }
 
         return results.stream()
                 .map(doc -> {
