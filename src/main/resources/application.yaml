@@ -67,6 +67,7 @@ fastapi:
   rag-process-url: ${FASTAPI_RAG_PROCESS_URL:http://localhost:8000/api/v1/rag/process}
 
 app:
+  share-url-prefix: ${SHARE_URL_PREFIX:http://localhost:8080/api/v1/documents/shared/}
   jwt:
     secret: ${JWT_SECRET:9a4f2c8d3e7b1a5c6d8e0f9b8c7a6d5e4f3c2b1a0d9e8f7a6b5c4d3e2f1a0b9c}
     access-expiration-ms: 900000

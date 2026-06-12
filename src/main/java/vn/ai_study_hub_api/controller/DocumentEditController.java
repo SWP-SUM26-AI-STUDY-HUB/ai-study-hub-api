@@ -8,7 +8,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import vn.ai_study_hub_api.common.ApiResponse;
-import vn.ai_study_hub_api.controller.request.UpdateDocumentRequest;
+import vn.ai_study_hub_api.controller.request.TagDocumentRequest;
 import vn.ai_study_hub_api.controller.response.DocumentDetailResponse;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.DocumentEditService;
@@ -23,27 +23,23 @@ public class DocumentEditController {
 
     private final DocumentEditService documentEditService;
 
-    @PutMapping("/{documentId}")
+
+    @PutMapping("/{documentId}/tags")
     @ResponseStatus(HttpStatus.OK)
     @Operation(
-            summary = "Update document metadata",
-            description = "Allows the document owner to update title, description, tags, and visibility. Changing visibility to PUBLIC submits the document for admin approval."
+            summary = "Tag a document",
+            description = "Allows the document owner to associate tags with the document. Reuses existing tags or creates new ones if they don't exist. Maximum 5 tags."
     )
-    public ApiResponse<DocumentDetailResponse> updateDocument(
+    public ApiResponse<DocumentDetailResponse> tagDocument(
             @PathVariable UUID documentId,
-            @RequestBody UpdateDocumentRequest request) {
+            @RequestBody TagDocumentRequest request) {
 
         UUID userId = getCurrentUserId();
-        DocumentDetailResponse response = documentEditService.updateDocument(documentId, userId, request);
+        DocumentDetailResponse response = documentEditService.tagDocument(documentId, userId, request.getTags());
 
-        String message = "Your changes have been saved successfully.";
-        if ("PUBLIC".equalsIgnoreCase(request.getVisibility())
-                && "PENDING".equals(response.getStatus())) {
-            message = "Your changes have been saved. The document has been submitted for admin approval.";
-        }
-
-        return ApiResponse.success(response, message);
+        return ApiResponse.success(response, "Document tags updated successfully.");
     }
+
 
     private UUID getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

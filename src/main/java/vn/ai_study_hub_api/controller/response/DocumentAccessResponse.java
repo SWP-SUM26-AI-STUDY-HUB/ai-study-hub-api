@@ -2,6 +2,7 @@ package vn.ai_study_hub_api.controller.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
@@ -23,4 +24,9 @@ public class DocumentAccessResponse {
 
     @JsonProperty("presigned_url")
     private String presignedUrl;
+
+    @JsonProperty("created_at")
+    private LocalDateTime createdAt;
+
+    private String description;
 }
