@@ -32,4 +32,14 @@ public class TagController {
         List<TagResponse> tags = tagService.searchTags(keyword);
         return ApiResponse.success(tags, "Tags retrieved successfully");
     }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Create tags", description = "Creates tags in the system if they do not exist. No document association.")
+    public ApiResponse<List<TagResponse>> createTags(
+            @RequestBody List<String> tags) {
+        log.info("Received request to create tags: {}", tags);
+        List<TagResponse> response = tagService.createTags(tags);
+        return ApiResponse.success(response, "Tags created successfully");
+    }
 }

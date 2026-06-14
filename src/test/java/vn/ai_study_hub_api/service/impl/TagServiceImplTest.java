@@ -51,4 +51,40 @@ public class TagServiceImplTest {
 
         verify(tagRepository, never()).findByLabelContainingIgnoreCase(anyString());
     }
+
+    @Test
+    void createTags_Success() {
+        List<String> inputTags = List.of("Math", "Physics", " ");
+        TagEntity mathEntity = TagEntity.builder().id(1).label("Math").build();
+        TagEntity physicsEntity = TagEntity.builder().id(2).label("Physics").build();
+
+        when(tagRepository.findByLabel("Math")).thenReturn(java.util.Optional.of(mathEntity));
+        when(tagRepository.findByLabel("Physics")).thenReturn(java.util.Optional.empty());
+        when(tagRepository.save(any(TagEntity.class))).thenAnswer(invocation -> {
+            TagEntity argument = invocation.getArgument(0);
+            return TagEntity.builder().id(2).label(argument.getLabel()).build();
+        });
+
+        List<TagResponse> results = tagService.createTags(inputTags);
+
+        assertNotNull(results);
+        assertEquals(2, results.size());
+        assertEquals("Math", results.get(0).getLabel());
+        assertEquals("Physics", results.get(1).getLabel());
+        verify(tagRepository, times(1)).findByLabel("Math");
+        verify(tagRepository, times(1)).findByLabel("Physics");
+        verify(tagRepository, times(1)).save(any(TagEntity.class));
+    }
+
+    @Test
+    void createTags_Failure_TagLengthExceedsLimit() {
+        List<String> inputTags = List.of("ThisTagLabelIsWayTooLongAndExceedsThirtyCharactersLimit");
+
+        assertThrows(vn.ai_study_hub_api.exception.AppException.class, () -> {
+            tagService.createTags(inputTags);
+        });
+
+        verify(tagRepository, never()).findByLabel(anyString());
+        verify(tagRepository, never()).save(any(TagEntity.class));
+    }
 }
