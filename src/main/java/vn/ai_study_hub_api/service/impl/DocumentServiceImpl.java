@@ -552,4 +552,167 @@ public class DocumentServiceImpl implements DocumentService {
                 .description(document.getDescription())
                 .build();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getPendingPublicDocuments() {
+        log.info("Fetching pending public documents for moderation");
+        List<DocumentEntity> pendingDocs = documentRepository.findPendingPublicDocuments(
+                DocumentStatus.PENDING,
+                DocumentVisibility.PUBLIC
+        );
+        return pendingDocs.stream()
+                .map(doc -> {
+                    String uploaderName = null;
+                    vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
+                    if (doc.getUploader() != null) {
+                        uploaderName = doc.getUploader().getFullName();
+                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
+                            uploaderName = doc.getUploader().getEmail();
+                        }
+                        uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
+                                .id(doc.getUploader().getId())
+                                .fullName(doc.getUploader().getFullName())
+                                .avatarUrl(doc.getUploader().getAvatarUrl())
+                                .build();
+                    }
+
+                    List<String> tagLabels = null;
+                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
+                        tagLabels = doc.getTags().stream()
+                                .map(TagEntity::getLabel)
+                                .collect(Collectors.toList());
+                    }
+
+                    return DocumentResponse.builder()
+                            .id(doc.getId())
+                            .title(doc.getTitle())
+                            .fileName(doc.getTitle())
+                            .fileUrl(doc.getFileUrl())
+                            .fileSize(doc.getFileSizeBytes())
+                            .fileType(doc.getFileType())
+                            .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                            .description(doc.getDescription())
+                            .tags(tagLabels)
+                            .uploaderName(uploaderName)
+                            .uploader(uploaderResponse)
+                            .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
+                            .createdAt(doc.getCreatedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void approveDocument(UUID documentId) {
+        log.info("Approving public document with ID: {}", documentId);
+        DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        if (!DocumentStatus.PENDING.equals(document.getStatus()) || !DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Only pending public documents can be approved");
+        }
+
+        document.setStatus(DocumentStatus.COMPLETED);
+        documentRepository.save(document);
+
+        // taạo thông báo cho người up
+        String title = "Document Approved";
+        String content = String.format("Your document '%s' has been approved and is now public.", document.getTitle());
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(document.getUploader())
+                .title(title)
+                .content(content)
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
+
+        log.info("Document {} successfully approved, status set to COMPLETED. Triggering FastAPI RAG index.", documentId);
+        
+        triggerFastApiAsync(documentId);
+    }
+
+    @Override
+    @Transactional
+    public void rejectDocument(UUID documentId, String reason) {
+        log.info("Rejecting public document with ID: {}, reason: {}", documentId, reason);
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Rejection reason is required");
+        }
+
+        DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        if (!DocumentStatus.PENDING.equals(document.getStatus()) || !DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Only pending public documents can be rejected");
+        }
+
+        document.setStatus(DocumentStatus.REJECTED);
+        document.setRejectionReason(reason.trim());
+        documentRepository.save(document);
+
+        // tạo thông báo cho người up
+        String title = "Document Rejected";
+        String content = String.format("Your document has been rejected. Reason: %s", reason.trim());
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(document.getUploader())
+                .title(title)
+                .content(content)
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
+
+        log.info("Document {} successfully rejected, status set to REJECTED. Notification sent to owner.", documentId);
+    }
+
+    @Async("taskExecutor")
+    @Override
+    public void triggerFastApiAsync(UUID documentId) {
+        log.info("Triggering FastAPI processing for document ID: {}", documentId);
+        try {
+            DocumentEntity document = documentRepository.findById(documentId)
+                    .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
+
+            if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+                log.info("Document ID {} has been deleted, skipping FastAPI processing", documentId);
+                return;
+            }
+
+            // tạo url truy cập tạm thời
+            String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
+            if (presignedUrl == null) {
+                throw new IllegalStateException("Failed to generate presigned URL");
+            }
+            log.info("Generated temporary access URL for document {}: {}", documentId, presignedUrl);
+
+            log.info("Triggering FastAPI processing for document: {}", documentId);
+            Map<String, String> payload = Map.of(
+                    "document_id", documentId.toString(),
+                    "file_url", presignedUrl
+            );
+
+            webClient.post()
+                    .uri(fastApiUrl)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(payload)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .timeout(java.time.Duration.ofSeconds(10))
+                    .block();
+
+            log.info("FastAPI webhook successfully triggered for document ID: {}", documentId);
+        } catch (Exception e) {
+            log.error("Failed to trigger FastAPI for document ID: {}", documentId, e);
+            updateDocumentStatus(documentId, DocumentStatus.FAILED);
+        }
+    }
 }
