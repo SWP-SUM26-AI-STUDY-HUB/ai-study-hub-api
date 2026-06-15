@@ -15,6 +15,7 @@ import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
 import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
+import vn.ai_study_hub_api.repository.ViolationHistoryRepository;
 
 import java.util.Collections;
 import java.util.List;
@@ -39,6 +40,9 @@ public class ReportServiceImplTest {
 
     @Mock
     private NotificationRepository notificationRepository;
+
+    @Mock
+    private ViolationHistoryRepository violationHistoryRepository;
 
     @InjectMocks
     private ReportServiceImpl reportService;
@@ -166,5 +170,50 @@ public class ReportServiceImplTest {
         assertEquals("Reporter not found.", exception.getMessage());
         verify(reportRepository, never()).save(any());
         verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    void resolveReport_Success() {
+        ReportEntity pendingReport = ReportEntity.builder()
+                .id(UUID.randomUUID())
+                .reporter(adminUser)
+                .document(mockDocument)
+                .reason("Test reason")
+                .status(ReportStatus.PENDING)
+                .build();
+
+        when(reportRepository.findById(pendingReport.getId())).thenReturn(Optional.of(pendingReport));
+
+        reportService.resolveReport(pendingReport.getId(), "Custom reason for violation");
+
+        assertEquals(ReportStatus.RESOLVED, pendingReport.getStatus());
+        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
+        assertNotNull(mockDocument.getDeletedAt());
+
+        verify(reportRepository, times(1)).save(pendingReport);
+        verify(documentRepository, times(1)).save(mockDocument);
+        verify(userRepository, times(1)).save(mockUser);
+        verify(violationHistoryRepository, times(1)).save(any(ViolationHistoryEntity.class));
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+    }
+
+    @Test
+    void rejectReport_Success() {
+        ReportEntity pendingReport = ReportEntity.builder()
+                .id(UUID.randomUUID())
+                .reporter(adminUser)
+                .document(mockDocument)
+                .reason("Test reason")
+                .status(ReportStatus.PENDING)
+                .build();
+
+        when(reportRepository.findById(pendingReport.getId())).thenReturn(Optional.of(pendingReport));
+
+        reportService.rejectReport(pendingReport.getId());
+
+        assertEquals(ReportStatus.REJECTED, pendingReport.getStatus());
+        verify(reportRepository, times(1)).save(pendingReport);
+        verify(documentRepository, never()).save(any());
+        verify(violationHistoryRepository, never()).save(any());
     }
 }
