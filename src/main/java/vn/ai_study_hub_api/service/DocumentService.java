@@ -32,4 +32,12 @@ public interface DocumentService {
     vn.ai_study_hub_api.controller.response.DocumentAccessResponse getPreviewAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
 
     vn.ai_study_hub_api.controller.response.DocumentAccessResponse getDownloadAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
+
+    List<DocumentResponse> getPendingPublicDocuments();
+
+    void approveDocument(UUID documentId);
+
+    void rejectDocument(UUID documentId, String reason);
+
+    void triggerFastApiAsync(UUID documentId);
 }

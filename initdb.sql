@@ -94,7 +94,8 @@ CREATE TABLE "documents" (
   "link_share" varchar(255) UNIQUE,
   "created_at" timestamp DEFAULT (now()),
   "updated_at" timestamp DEFAULT (now()),
-  "deleted_at" timestamp
+  "deleted_at" timestamp,
+  "rejection_reason" text
 );
 
 CREATE TABLE "tags" (
