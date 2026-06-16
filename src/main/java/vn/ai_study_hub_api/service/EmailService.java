@@ -24,7 +24,7 @@ public class EmailService {
     }
     public void sendResetPasswordEmail(String toEmail, String resetToken) {
         // Link này sau này ông đổi thành đường dẫn giao diện Reset Mật khẩu của Frontend nhé
-        String resetLink = "http://localhost:3000/reset-password?token=" + resetToken;
+        String resetLink = "http://localhost:5173/reset-password?token=" + resetToken;
 
         jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
         try {
