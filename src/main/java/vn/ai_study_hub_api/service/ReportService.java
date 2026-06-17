@@ -7,4 +7,6 @@ import java.util.UUID;
 
 public interface ReportService {
     ReportResponse submitReport(UUID documentId, UUID reporterId, ReportRequest request);
+    void resolveReport(UUID reportId, String customReason);
+    void rejectReport(UUID reportId);
 }
