@@ -2,7 +2,6 @@ package vn.ai_study_hub_api.model;
 
 import jakarta.persistence.*;
 import lombok.*;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -26,7 +25,7 @@ public class ViolationHistoryEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String reason;
 
-    @Column(length = 50)
+    @Column(name = "status", length = 50)
     private String status;
 
     @Column(name = "created_at", insertable = false, updatable = false)
