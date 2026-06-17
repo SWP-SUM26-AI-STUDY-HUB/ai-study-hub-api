@@ -124,6 +124,14 @@ public class UserServiceImpl implements UserService {
         return mapToUserResponse(savedUser);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UserResponse getMyProfile(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
+        return mapToUserResponse(user);
+    }
+
     private UserResponse mapToUserResponse(UserEntity user) {
         String resolvedAvatarUrl = user.getAvatarUrl();
         if (resolvedAvatarUrl != null && !resolvedAvatarUrl.isEmpty() 
