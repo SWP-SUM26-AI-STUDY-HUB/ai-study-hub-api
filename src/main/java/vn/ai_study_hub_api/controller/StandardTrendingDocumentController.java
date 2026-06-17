@@ -13,16 +13,16 @@ import vn.ai_study_hub_api.controller.response.TrendingDocumentResponse;
 import vn.ai_study_hub_api.service.TrendingDocumentService;
 
 @RestController
-@RequestMapping("/api/v1/auth/documents")
+@RequestMapping("/api/v1/documents")
 @RequiredArgsConstructor
-@Tag(name = "Trending Documents", description = "Endpoints for viewing trending documents")
-public class TrendingDocumentController {
+@Tag(name = "Trending Documents Standardized", description = "Standardized endpoints for viewing trending documents")
+public class StandardTrendingDocumentController {
 
     private final TrendingDocumentService trendingDocumentService;
 
     @GetMapping("/trending")
     @ResponseStatus(HttpStatus.OK)
-    @Operation(summary = "View trending documents", description = "Retrieve public documents sorted by popularity (rating and reviews).")
+    @Operation(summary = "View trending documents (Standardized)", description = "Retrieve public documents sorted by popularity (rating and reviews).")
     public ApiResponse<Page<TrendingDocumentResponse>> getTrendingDocuments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
