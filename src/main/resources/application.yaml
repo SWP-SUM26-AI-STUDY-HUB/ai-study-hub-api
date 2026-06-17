@@ -13,7 +13,7 @@ spring:
           google:
             client-id: ${GOOGLE_CLIENT_ID}
             client-secret: ${GOOGLE_CLIENT_SECRET}
-            redirect-uri: "${GOOGLE_REDIRECT_URI:http://localhost:4300/auth/google/callback}"
+            redirect-uri: "${GOOGLE_REDIRECT_URI:http://localhost:5173/auth/google/callback}"
             scope:
               - email
               - profile
@@ -35,7 +35,7 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_ACCOUNT:}
+    username: ${MAIL_ACCOUNT:}n
     password: ${MAIL_PASSWORD:}
     properties:
       mail:
