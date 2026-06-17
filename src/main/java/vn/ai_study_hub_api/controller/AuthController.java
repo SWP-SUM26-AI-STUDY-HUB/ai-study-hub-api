@@ -135,8 +135,6 @@ public class AuthController {
     public ApiResponse<String> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         authService.forgotPassword(request);
 
-        // Tham số 1 (Data): Chuỗi thông báo thành công cho mục "data"
-        // Tham số 2 (Message): Chuỗi hiển thị ở mục "message"
         return ApiResponse.success("Reset password email has been sent successfully!", "Request processed successfully.");
     }
 
@@ -146,8 +144,6 @@ public class AuthController {
     public ApiResponse<String> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         authService.resetPassword(request);
 
-        // Tham số 1 (Data): Chuỗi thông báo thành công cho mục "data"
-        // Tham số 2 (Message): Chuỗi hiển thị ở mục "message"
         return ApiResponse.success("Password has been reset successfully!", "Request processed successfully.");
     }
 

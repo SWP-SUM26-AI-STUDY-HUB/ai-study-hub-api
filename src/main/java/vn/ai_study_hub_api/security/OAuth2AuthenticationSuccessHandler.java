@@ -33,7 +33,7 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
 
         String accessToken = tokenProvider.generateAccessToken(userPrincipal);
 
-        String targetUrl = "http://localhost:4300/auth/callback?token=" + accessToken;
+        String targetUrl = "http://localhost:5173/auth/callback?token=" + accessToken;
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
     }
 }
