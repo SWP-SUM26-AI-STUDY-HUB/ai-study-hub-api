@@ -1006,5 +1006,115 @@ public class DocumentServiceImplTest {
         assertTrue(result.isEmpty());
         verify(documentRepository, never()).searchPublicDocuments(anyString(), any(), any());
     }
+
+    @Test
+    void getPendingPublicDocuments_Success() {
+        mockDocument.setStatus(DocumentStatus.PENDING);
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        when(documentRepository.findPendingPublicDocuments(DocumentStatus.PENDING, DocumentVisibility.PUBLIC))
+                .thenReturn(List.of(mockDocument));
+
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPendingPublicDocuments();
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(mockDocument.getId(), result.get(0).getId());
+        assertEquals("PENDING", result.get(0).getStatus());
+        assertEquals("PUBLIC", result.get(0).getVisibility());
+
+        verify(documentRepository, times(1)).findPendingPublicDocuments(DocumentStatus.PENDING, DocumentVisibility.PUBLIC);
+    }
+
+    @Test
+    void approveDocument_Success() {
+        mockDocument.setStatus(DocumentStatus.PENDING);
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(uploadProvider.generatePresignedUrl(anyString())).thenReturn("https://presigned.url/mock.pdf");
+
+        // Mock WebClient call
+        WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
+        WebClient.RequestBodySpec requestBodySpec = mock(WebClient.RequestBodySpec.class);
+        WebClient.RequestHeadersSpec requestHeadersSpec = mock(WebClient.RequestHeadersSpec.class);
+        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
+
+        when(webClient.post()).thenReturn(requestBodyUriSpec);
+        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
+        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
+        when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
+        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+        when(responseSpec.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
+
+        documentService.approveDocument(documentId);
+
+        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatus());
+        verify(documentRepository, times(1)).save(mockDocument);
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+    }
+
+    @Test
+    void approveDocument_NotFound() {
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.approveDocument(documentId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void approveDocument_NotPending() {
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.approveDocument(documentId)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectDocument_Success() {
+        mockDocument.setStatus(DocumentStatus.PENDING);
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        documentService.rejectDocument(documentId, "Contains ads");
+
+        assertEquals(DocumentStatus.REJECTED, mockDocument.getStatus());
+        assertEquals("Contains ads", mockDocument.getRejectionReason());
+        verify(documentRepository, times(1)).save(mockDocument);
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+    }
+
+    @Test
+    void rejectDocument_NoReason() {
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.rejectDocument(documentId, "   ")
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectDocument_NotPending() {
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.rejectDocument(documentId, "Contains ads")
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        verify(documentRepository, never()).save(any());
+    }
 }
 
