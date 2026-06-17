@@ -146,25 +146,4 @@ public class AuthController {
 
         return ApiResponse.success("Password has been reset successfully!", "Request processed successfully.");
     }
-
-    @PutMapping(value = "/profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @ResponseStatus(HttpStatus.OK)
-    @Operation(summary = "Edit user profile", description = "Update user fullName and/or upload avatar image to AWS S3")
-    public ApiResponse<UserResponse> editProfile(
-            @Parameter(description = "Display name / Full name of the user", example = "John Doe")
-            @RequestParam(value = "fullName", required = false) String fullName,
-            @Parameter(description = "Avatar image file (JPEG/PNG, max 2MB)")
-            @RequestParam(value = "avatar", required = false) MultipartFile avatar) {
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
-            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
-        }
-        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-        UUID userId = userDetails.getId();
-
-        UserResponse updatedUser = userService.updateProfile(userId, fullName, avatar);
-
-        return ApiResponse.success(updatedUser, "Profile updated successfully.");
-    }
 }
