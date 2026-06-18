@@ -177,7 +177,7 @@ CREATE TABLE "document_chunks" (
   "document_id" uuid,
   "chunk_index" integer NOT NULL,
   "content" text NOT NULL,
-  "embedding" vector(768),
+  "embedding" vector(1536),
   "metadata" jsonb,
   "page_number" integer,
   "created_at" timestamp DEFAULT (now())
