@@ -142,12 +142,15 @@ public class UserServiceImplTest {
         // Mock userRepository.save
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         
+        String newBio = "My new bio";
+        
         // Act
-        UserResponse response = userService.updateProfile(userId, newFullName, mockAvatar);
+        UserResponse response = userService.updateProfile(userId, newFullName, newBio, mockAvatar);
         
         // Assert
         assertNotNull(response);
         assertEquals(newFullName, response.getFullName());
+        assertEquals(newBio, response.getBio());
         assertEquals("http://presigned-url-mock.com/avatar", response.getAvatarUrl());
         verify(uploadProvider, times(1)).upload(any(File.class), anyString(), eq("image/png"));
         verify(userRepository, times(1)).save(any(UserEntity.class));
@@ -165,7 +168,7 @@ public class UserServiceImplTest {
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
-                userService.updateProfile(userId, "New Name", mockAvatar));
+                userService.updateProfile(userId, "New Name", null, mockAvatar));
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
         assertTrue(exception.getMessage().contains("exceeds the 2MB limit"));
     }
@@ -184,7 +187,7 @@ public class UserServiceImplTest {
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
-                userService.updateProfile(userId, "New Name", mockAvatar));
+                userService.updateProfile(userId, "New Name", null, mockAvatar));
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
         assertTrue(exception.getMessage().contains("Unsupported file format"));
     }
@@ -197,7 +200,7 @@ public class UserServiceImplTest {
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
-                userService.updateProfile(userId, "New Name", null));
+                userService.updateProfile(userId, "New Name", null, null));
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
     }
 }

@@ -71,12 +71,16 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserResponse updateProfile(UUID userId, String fullName, MultipartFile avatar) {
+    public UserResponse updateProfile(UUID userId, String fullName, String bio, MultipartFile avatar) {
         UserEntity existingUser = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
 
         if (fullName != null && !fullName.trim().isEmpty()) {
             existingUser.setFullName(fullName.trim());
+        }
+
+        if (bio != null) {
+            existingUser.setBio(bio.trim().isEmpty() ? null : bio.trim());
         }
 
         if (avatar != null && !avatar.isEmpty()) {
@@ -150,6 +154,7 @@ public class UserServiceImpl implements UserService {
                 .avatarUrl(resolvedAvatarUrl)
                 .role(user.getRole() != null ? user.getRole().name() : null)
                 .status(user.getStatus() != null ? user.getStatus().name() : null)
+                .bio(user.getBio())
                 .build();
     }
 
