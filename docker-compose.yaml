@@ -48,7 +48,8 @@ services:
 
 networks:
   default:
-    name: backend-network
+    name: ai-study-hub-network
+    external: true
 
 volumes:
   postgres:

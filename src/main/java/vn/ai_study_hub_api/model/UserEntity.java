@@ -71,4 +71,7 @@ public class UserEntity {
 
     @Column(name = "plan_expires_at")
     private LocalDateTime planExpiresAt;
+
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
 }

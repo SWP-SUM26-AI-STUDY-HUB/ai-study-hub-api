@@ -53,7 +53,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
-    public DocumentEntity initiateUpload(MultipartFile file, String title, List<String> tags, String description, DocumentVisibility visibility, UUID userId) {
+    public DocumentEntity initiateUpload(MultipartFile file, String title, List<Integer> tags, String description, DocumentVisibility visibility, UUID userId) {
         log.info("Initiating upload for file: {}, user: {}, tags: {}, title: {}, visibility: {}", file.getOriginalFilename(), userId, tags, title, visibility);
  
         // Retrieve uploader user
@@ -85,16 +85,12 @@ public class DocumentServiceImpl implements DocumentService {
         // Retrieve and validate tags
         List<TagEntity> tagEntities = new java.util.ArrayList<>();
         if (tags != null) {
-            for (String tag : tags) {
-                if (tag == null || tag.trim().isEmpty()) {
+            for (Integer tagId : tags) {
+                if (tagId == null) {
                     continue;
                 }
-                String trimmedTag = tag.trim();
-                if (trimmedTag.length() > 30) {
-                    throw new IllegalArgumentException("Tag length cannot exceed 30 characters");
-                }
-                TagEntity tagEntity = tagRepository.findByLabel(trimmedTag)
-                        .orElseGet(() -> tagRepository.save(TagEntity.builder().label(trimmedTag).build()));
+                TagEntity tagEntity = tagRepository.findById(tagId)
+                        .orElseThrow(() -> new IllegalArgumentException("Tag not found with ID: " + tagId));
                 tagEntities.add(tagEntity);
             }
         }
