@@ -18,4 +18,5 @@ public class UserResponse {
     private String avatarUrl;
     private String role;
     private String status;
+    private String bio;
 }

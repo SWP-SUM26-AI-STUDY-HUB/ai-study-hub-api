@@ -38,14 +38,17 @@ public class UserController {
 
     @PutMapping(value = "/edit-profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    @Operation(summary = "Update user profile", description = "Updates the authenticated user's display name and/or avatar. Only JPEG/PNG files under 2MB are accepted.")
+    @Operation(summary = "Update user profile", description = "Updates the authenticated user's display name, bio, and/or avatar. Only JPEG/PNG files under 2MB are accepted.")
     public ApiResponse<UserResponse> updateProfile(
             @RequestPart(value = "fullName", required = false)
             @Size(max = 100, message = "Full name must not exceed 100 characters")
             String fullName,
+            @RequestPart(value = "bio", required = false)
+            @Size(max = 255, message = "Bio must not exceed 255 characters")
+            String bio,
             @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
         UUID userId = getCurrentUserId();
-        UserResponse response = userService.updateProfile(userId, fullName, avatar);
+        UserResponse response = userService.updateProfile(userId, fullName, bio, avatar);
         return ApiResponse.success(response, "Profile updated successfully.");
     }
 
