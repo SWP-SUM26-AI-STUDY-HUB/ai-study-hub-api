@@ -319,7 +319,7 @@ public class DocumentServiceImplTest {
         assertEquals("Test description", result.get(0).getDescription());
         assertNotNull(result.get(0).getTags());
         assertEquals(1, result.get(0).getTags().size());
-        assertEquals("Study", result.get(0).getTags().get(0));
+        assertEquals("Study", result.get(0).getTags().get(1));
 
         verify(userRepository, times(1)).findById(userId);
         verify(documentRepository, times(1)).findActiveDocumentsByUploaderId(userId);

@@ -311,25 +311,23 @@ public class DocumentServiceImpl implements DocumentService {
         return documentRepository.findActiveDocumentsByUploaderId(userId)
                 .stream()
                 .map(doc -> {
-                    String uploaderName = null;
                     vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
                     if (doc.getUploader() != null) {
-                        uploaderName = doc.getUploader().getFullName();
-                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
-                            uploaderName = doc.getUploader().getEmail();
+                        String finalUploaderName = doc.getUploader().getFullName();
+                        if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
+                            finalUploaderName = doc.getUploader().getEmail();
                         }
                         uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
                                 .id(doc.getUploader().getId())
-                                .fullName(doc.getUploader().getFullName())
+                                .fullName(finalUploaderName)
                                 .avatarUrl(doc.getUploader().getAvatarUrl())
                                 .build();
                     }
 
-                    List<String> tagLabels = null;
+                    Map<Integer, String> tags = null;
                     if (doc.getTags() != null && !doc.getTags().isEmpty()) {
-                        tagLabels = doc.getTags().stream()
-                                .map(TagEntity::getLabel)
-                                .collect(Collectors.toList());
+                        tags = doc.getTags().stream()
+                                .collect(Collectors.toMap(t -> t.getId(), t -> t.getLabel()));
                     }
 
                     return DocumentResponse.builder()
@@ -341,8 +339,7 @@ public class DocumentServiceImpl implements DocumentService {
                             .fileType(doc.getFileType())
                             .status(doc.getStatus() != null ? doc.getStatus().name() : null)
                             .description(doc.getDescription())
-                            .tags(tagLabels)
-                            .uploaderName(uploaderName)
+                            .tags(tags)
                             .uploader(uploaderResponse)
                             .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
                             .createdAt(doc.getCreatedAt())
@@ -390,20 +387,24 @@ public class DocumentServiceImpl implements DocumentService {
         return results.stream()
                 .map(doc -> {
                     // Lấy tên uploader (nếu có)
-                    String uploaderName = null;
+                    vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
                     if (doc.getUploader() != null) {
-                        uploaderName = doc.getUploader().getFullName();
-                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
-                            uploaderName = doc.getUploader().getEmail();
+                        String finalUploaderName = doc.getUploader().getFullName();
+                        if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
+                            finalUploaderName = doc.getUploader().getEmail();
                         }
+                        uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
+                                .id(doc.getUploader().getId())
+                                .fullName(finalUploaderName)
+                                .avatarUrl(doc.getUploader().getAvatarUrl())
+                                .build();
                     }
 
-                    // Lấy danh sách tag labels
-                    List<String> tagLabels = null;
+                    // Lấy danh sách tag labels format id:label
+                    Map<Integer, String> tags = null;
                     if (doc.getTags() != null && !doc.getTags().isEmpty()) {
-                        tagLabels = doc.getTags().stream()
-                                .map(TagEntity::getLabel)
-                                .collect(Collectors.toList());
+                        tags = doc.getTags().stream()
+                                .collect(Collectors.toMap(t -> t.getId(), t -> t.getLabel()));
                     }
 
                     return DocumentResponse.builder()
@@ -415,8 +416,8 @@ public class DocumentServiceImpl implements DocumentService {
                             .fileType(doc.getFileType())
                             .status(doc.getStatus() != null ? doc.getStatus().name() : null)
                             .description(doc.getDescription())
-                            .tags(tagLabels)
-                            .uploaderName(uploaderName)
+                            .tags(tags)
+                            .uploader(uploaderResponse)
                             .createdAt(doc.getCreatedAt())
                             .build();
                 })
@@ -559,25 +560,23 @@ public class DocumentServiceImpl implements DocumentService {
         );
         return pendingDocs.stream()
                 .map(doc -> {
-                    String uploaderName = null;
                     vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
                     if (doc.getUploader() != null) {
-                        uploaderName = doc.getUploader().getFullName();
-                        if (uploaderName == null || uploaderName.trim().isEmpty()) {
-                            uploaderName = doc.getUploader().getEmail();
+                        String finalUploaderName = doc.getUploader().getFullName();
+                        if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
+                            finalUploaderName = doc.getUploader().getEmail();
                         }
                         uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
                                 .id(doc.getUploader().getId())
-                                .fullName(doc.getUploader().getFullName())
+                                .fullName(finalUploaderName)
                                 .avatarUrl(doc.getUploader().getAvatarUrl())
                                 .build();
                     }
 
-                    List<String> tagLabels = null;
+                    Map<Integer, String> tags = null;
                     if (doc.getTags() != null && !doc.getTags().isEmpty()) {
-                        tagLabels = doc.getTags().stream()
-                                .map(TagEntity::getLabel)
-                                .collect(Collectors.toList());
+                        tags = doc.getTags().stream()
+                                .collect(Collectors.toMap(t -> t.getId(), t -> t.getLabel()));
                     }
 
                     return DocumentResponse.builder()
@@ -589,8 +588,7 @@ public class DocumentServiceImpl implements DocumentService {
                             .fileType(doc.getFileType())
                             .status(doc.getStatus() != null ? doc.getStatus().name() : null)
                             .description(doc.getDescription())
-                            .tags(tagLabels)
-                            .uploaderName(uploaderName)
+                            .tags(tags)
                             .uploader(uploaderResponse)
                             .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
                             .createdAt(doc.getCreatedAt())
