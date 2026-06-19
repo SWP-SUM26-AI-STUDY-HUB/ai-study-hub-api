@@ -71,60 +71,81 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserResponse updateProfile(UUID userId, String fullName, String bio, MultipartFile avatar) {
+    public UserResponse updateProfile(UUID userId, vn.ai_study_hub_api.controller.request.UpdateProfileRequest request) {
         UserEntity existingUser = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
 
-        if (fullName != null && !fullName.trim().isEmpty()) {
-            existingUser.setFullName(fullName.trim());
+        if (request.getFullName() != null && !request.getFullName().trim().isEmpty()) {
+            existingUser.setFullName(request.getFullName().trim());
         }
 
-        if (bio != null) {
-            existingUser.setBio(bio.trim().isEmpty() ? null : bio.trim());
-        }
-
-        if (avatar != null && !avatar.isEmpty()) {
-            // Kiểm tra kích thước file (<= 2MB = 2 * 1024 * 1024 bytes)
-            if (avatar.getSize() > 2 * 1024 * 1024) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "Uploaded file size exceeds the 2MB limit. Please choose another file");
-            }
-
-            String contentType = avatar.getContentType();
-            String originalFilename = avatar.getOriginalFilename();
-            String extension = "";
-            if (originalFilename != null && originalFilename.lastIndexOf('.') != -1) {
-                extension = originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase();
-            }
-
-            boolean isValidFormat = (contentType != null && (contentType.equals("image/jpeg") || contentType.equals("image/png")))
-                    || extension.equals("jpg") || extension.equals("jpeg") || extension.equals("png");
-
-            if (!isValidFormat) {
-                throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format. Only JPEG and PNG are allowed");
-            }
-
-            File tempFile = null;
-            try {
-                // Tạo key S3 độc nhất cho avatar: avatars/{userId}-{uuid}.{extension}
-                String s3Key = "avatars/" + userId.toString() + "-" + UUID.randomUUID().toString() + "." + (extension.isEmpty() ? "jpg" : extension);
-
-                tempFile = Files.createTempFile("avatar-" + userId, "." + extension).toFile();
-                avatar.transferTo(tempFile);
-
-                uploadProvider.upload(tempFile, s3Key, avatar.getContentType());
-
-                existingUser.setAvatarUrl(s3Key);
-            } catch (IOException e) {
-                log.error("Failed to upload avatar to S3 for user: {}", userId, e);
-                throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload avatar to S3");
-            } finally {
-                if (tempFile != null && tempFile.exists()) {
-                    tempFile.delete();
-                }
-            }
+        if (request.getBio() != null) {
+            existingUser.setBio(request.getBio().trim().isEmpty() ? null : request.getBio().trim());
         }
 
         UserEntity savedUser = userRepository.save(existingUser);
+        return mapToUserResponse(savedUser);
+    }
+
+    @Override
+    public UserResponse updateAvatar(UUID userId, MultipartFile avatar) {
+        if (avatar == null || avatar.isEmpty()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Avatar file is required.");
+        }
+
+        // Kiểm tra kích thước file (<= 2MB = 2 * 1024 * 1024 bytes)
+        if (avatar.getSize() > 2 * 1024 * 1024) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Uploaded file size exceeds the 2MB limit. Please choose another file");
+        }
+
+        String contentType = avatar.getContentType();
+        String originalFilename = avatar.getOriginalFilename();
+        String extension = "";
+        if (originalFilename != null && originalFilename.lastIndexOf('.') != -1) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase();
+        }
+
+        boolean isValidFormat = (contentType != null && (contentType.equals("image/jpeg") || contentType.equals("image/png")))
+                || extension.equals("jpg") || extension.equals("jpeg") || extension.equals("png");
+
+        if (!isValidFormat) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format. Only JPEG and PNG are allowed");
+        }
+
+        UserEntity existingUser = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
+
+        String oldAvatarUrl = existingUser.getAvatarUrl();
+        String s3Key = "avatars/" + userId.toString() + "-" + UUID.randomUUID().toString() + "." + (extension.isEmpty() ? "jpg" : extension);
+
+        File tempFile = null;
+        try {
+            tempFile = Files.createTempFile("avatar-" + userId, "." + extension).toFile();
+            avatar.transferTo(tempFile);
+
+            uploadProvider.upload(tempFile, s3Key, avatar.getContentType());
+        } catch (IOException e) {
+            log.error("Failed to upload avatar to S3 for user: {}", userId, e);
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload avatar to S3");
+        } finally {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+
+        existingUser.setAvatarUrl(s3Key);
+        UserEntity savedUser = userRepository.save(existingUser);
+
+        // Xóa avatar cũ trên S3 nếu là file được upload nội bộ (không phải link external)
+        if (oldAvatarUrl != null && !oldAvatarUrl.isEmpty() 
+                && !oldAvatarUrl.startsWith("http://") && !oldAvatarUrl.startsWith("https://")) {
+            try {
+                uploadProvider.delete(oldAvatarUrl);
+            } catch (Exception e) {
+                log.warn("Failed to delete old avatar from S3: {}", oldAvatarUrl, e);
+            }
+        }
+
         return mapToUserResponse(savedUser);
     }
 

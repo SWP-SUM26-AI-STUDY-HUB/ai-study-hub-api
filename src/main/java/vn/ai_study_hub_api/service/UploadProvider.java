@@ -8,6 +8,8 @@ public interface UploadProvider {
 
     String generatePresignedUrl(String storagePath);
 
+    void delete(String storagePath);
+
     /**
      * Generates a unique, structured storage path/key for the file.
      * Format: {userId}/{documentId}.{fileExtension}
