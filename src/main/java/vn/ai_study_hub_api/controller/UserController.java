@@ -15,6 +15,9 @@ import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.response.UserResponse;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.UserService;
+import vn.ai_study_hub_api.service.AuthService;
+import vn.ai_study_hub_api.controller.request.ChangePasswordRequest;
+import jakarta.validation.Valid;
 
 import java.util.UUID;
 
@@ -26,6 +29,7 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final AuthService authService;
 
     @GetMapping("/profile")
     @ResponseStatus(HttpStatus.OK)
@@ -50,6 +54,16 @@ public class UserController {
         UUID userId = getCurrentUserId();
         UserResponse response = userService.updateProfile(userId, fullName, bio, avatar);
         return ApiResponse.success(response, "Profile updated successfully.");
+    }
+
+
+    @PostMapping("/change-password")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Change password", description = "Allows authenticated user to change their password by validating the current password")
+    public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        UUID userId = getCurrentUserId();
+        authService.changePassword(userId, request);
+        return ApiResponse.success("Password changed successfully.");
     }
 
     private UUID getCurrentUserId() {
