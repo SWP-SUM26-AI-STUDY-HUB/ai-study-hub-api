@@ -17,6 +17,7 @@ import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.UserService;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.request.ChangePasswordRequest;
+import vn.ai_study_hub_api.controller.request.UpdateProfileRequest;
 import jakarta.validation.Valid;
 
 import java.util.UUID;
@@ -40,20 +41,24 @@ public class UserController {
         return ApiResponse.success(response, "Profile retrieved successfully.");
     }
 
-    @PutMapping(value = "/edit-profile", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PutMapping(value = "/edit-profile", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    @Operation(summary = "Update user profile", description = "Updates the authenticated user's display name, bio, and/or avatar. Only JPEG/PNG files under 2MB are accepted.")
+    @Operation(summary = "Update user profile", description = "Updates the authenticated user's display name and/or bio.")
     public ApiResponse<UserResponse> updateProfile(
-            @RequestPart(value = "fullName", required = false)
-            @Size(max = 100, message = "Full name must not exceed 100 characters")
-            String fullName,
-            @RequestPart(value = "bio", required = false)
-            @Size(max = 255, message = "Bio must not exceed 255 characters")
-            String bio,
-            @RequestPart(value = "avatar", required = false) MultipartFile avatar) {
+            @Valid @RequestBody UpdateProfileRequest request) {
         UUID userId = getCurrentUserId();
-        UserResponse response = userService.updateProfile(userId, fullName, bio, avatar);
+        UserResponse response = userService.updateProfile(userId, request);
         return ApiResponse.success(response, "Profile updated successfully.");
+    }
+
+    @PostMapping(value = "/edit-profile/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Update user avatar", description = "Uploads and updates the authenticated user's avatar. Only JPEG/PNG files under 2MB are accepted.")
+    public ApiResponse<UserResponse> updateAvatar(
+            @RequestPart(value = "avatar") MultipartFile avatar) {
+        UUID userId = getCurrentUserId();
+        UserResponse response = userService.updateAvatar(userId, avatar);
+        return ApiResponse.success(response, "Avatar updated successfully.");
     }
 
 
