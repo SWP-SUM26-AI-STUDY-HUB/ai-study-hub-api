@@ -510,16 +510,14 @@ public class DocumentServiceImpl implements DocumentService {
             updateFastApiVisibilityAsync(documentId, document.getVisibility().name());
         }
 
-        List<String> updatedTags = document.getTags().stream()
-                .map(TagEntity::getName)
-                .collect(Collectors.toList());
+        Map<Integer, String> updatedTags = document.getTags().stream()
+                .collect(Collectors.toMap(TagEntity::getId, TagEntity::getLabel));
 
         vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
         if (document.getUploader() != null) {
             uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
                     .id(document.getUploader().getId())
                     .fullName(document.getUploader().getFullName())
-                    .email(document.getUploader().getEmail())
                     .avatarUrl(document.getUploader().getAvatarUrl())
                     .build();
         }
