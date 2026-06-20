@@ -1,6 +1,7 @@
 package vn.ai_study_hub_api.service;
 
 import org.springframework.web.multipart.MultipartFile;
+import vn.ai_study_hub_api.controller.request.UpdateDocumentRequest;
 import vn.ai_study_hub_api.controller.response.DocumentResponse;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -9,6 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 public interface DocumentService {
+    DocumentResponse updateDocument(UUID documentId, UpdateDocumentRequest request, UUID userId);
     DocumentEntity initiateUpload(MultipartFile file, String title, List<Integer> tags, String description, DocumentVisibility visibility, UUID userId);
 
     void processDocumentAsync(UUID documentId, File tempFile, String storagePath, String contentType);

@@ -233,11 +233,19 @@ public class DocumentServiceImpl implements DocumentService {
 
         if ("SUCCESS".equalsIgnoreCase(status)) {
             document.setSummary(summary);
-            document.setStatus(DocumentStatus.COMPLETED);
-            log.info("FastAPI succeeded. Document {} updated to COMPLETED with summary.", documentId);
+            if (DocumentStatus.PROCESSING.equals(document.getStatus())) {
+                document.setStatus(DocumentStatus.COMPLETED);
+                log.info("FastAPI succeeded. Document {} updated to COMPLETED with summary.", documentId);
+            } else {
+                log.info("FastAPI succeeded. Document {} summary updated, but status remains {} (not PROCESSING).", documentId, document.getStatus());
+            }
         } else {
-            document.setStatus(DocumentStatus.FAILED);
-            log.warn("FastAPI failed. Document {} status updated to FAILED.", documentId);
+            if (DocumentStatus.PROCESSING.equals(document.getStatus())) {
+                document.setStatus(DocumentStatus.FAILED);
+                log.warn("FastAPI failed. Document {} status updated to FAILED.", documentId);
+            } else {
+                log.warn("FastAPI failed. Document {} status remains {} (not PROCESSING).", documentId, document.getStatus());
+            }
         }
 
         documentRepository.save(document);
@@ -426,6 +434,137 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional
+    public vn.ai_study_hub_api.controller.response.DocumentResponse updateDocument(UUID documentId, vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request, UUID userId) {
+        log.info("Updating document ID: {}, requested by user ID: {}", documentId, userId);
+
+        DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        if (!document.getUploader().getId().equals(userId)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
+        }
+
+        if (request.getTitle() != null && !request.getTitle().trim().isEmpty()) {
+            document.setTitle(request.getTitle().trim());
+        }
+
+        if (request.getDescription() != null) {
+            document.setDescription(request.getDescription().trim());
+        }
+
+        if (request.getTags() != null) {
+            List<TagEntity> tagEntities = new java.util.ArrayList<>();
+            for (String tagStr : request.getTags()) {
+                try {
+                    Integer tagId = Integer.parseInt(tagStr);
+                    TagEntity tagEntity = tagRepository.findById(tagId)
+                            .orElseThrow(() -> new IllegalArgumentException("Tag not found with ID: " + tagId));
+                    tagEntities.add(tagEntity);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException("Invalid tag ID format: " + tagStr);
+                }
+            }
+            document.setTags(tagEntities);
+        }
+
+        boolean visibilityChanged = false;
+        boolean needsRagProcessing = false;
+        DocumentVisibility oldVisibility = document.getVisibility();
+        
+        if (request.getVisibility() != null && !request.getVisibility().trim().isEmpty()) {
+            try {
+                DocumentVisibility newVisibility = DocumentVisibility.valueOf(request.getVisibility().trim().toUpperCase());
+                if (!oldVisibility.equals(newVisibility)) {
+                    document.setVisibility(newVisibility);
+                    visibilityChanged = true;
+                    
+                    if (DocumentVisibility.PUBLIC.equals(newVisibility)) {
+                        // PRIVATE -> PUBLIC
+                        document.setStatus(DocumentStatus.PENDING);
+                        createPendingApprovalNotifications(document);
+                    } else {
+                        // PUBLIC -> PRIVATE
+                        if (DocumentStatus.PENDING.equals(document.getStatus()) || DocumentStatus.REJECTED.equals(document.getStatus())) {
+                            // Tài liệu chưa từng được RAG xử lý (vì chưa được duyệt)
+                            document.setStatus(DocumentStatus.PROCESSING);
+                            needsRagProcessing = true;
+                        }
+                        // Nếu đang là COMPLETED hoặc PROCESSING thì cứ giữ nguyên
+                    }
+                }
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Invalid visibility value: " + request.getVisibility());
+            }
+        }
+
+        documentRepository.save(document);
+
+        if (needsRagProcessing) {
+            triggerFastApiAsync(documentId);
+        } else if (visibilityChanged) {
+            // Chỉ cập nhật metadata nếu tài liệu đã có vector trên RAG
+            updateFastApiVisibilityAsync(documentId, document.getVisibility().name());
+        }
+
+        List<String> updatedTags = document.getTags().stream()
+                .map(TagEntity::getName)
+                .collect(Collectors.toList());
+
+        vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
+        if (document.getUploader() != null) {
+            uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
+                    .id(document.getUploader().getId())
+                    .fullName(document.getUploader().getFullName())
+                    .email(document.getUploader().getEmail())
+                    .avatarUrl(document.getUploader().getAvatarUrl())
+                    .build();
+        }
+
+        return DocumentResponse.builder()
+                .id(document.getId())
+                .title(document.getTitle())
+                .fileName(document.getTitle())
+                .fileUrl(document.getFileUrl())
+                .fileSize(document.getFileSizeBytes())
+                .fileType(document.getFileType())
+                .status(document.getStatus() != null ? document.getStatus().name() : null)
+                .description(document.getDescription())
+                .tags(updatedTags)
+                .uploader(uploaderResponse)
+                .createdAt(document.getCreatedAt())
+                .visibility(document.getVisibility() != null ? document.getVisibility().name() : null)
+                .build();
+    }
+
+    @Async("taskExecutor")
+    public void updateFastApiVisibilityAsync(UUID documentId, String visibility) {
+        log.info("Updating FastAPI visibility for document ID: {} to {}", documentId, visibility);
+        try {
+            Map<String, String> payload = Map.of(
+                    "document_id", documentId.toString(),
+                    "visibility", visibility
+            );
+
+            webClient.patch()
+                    .uri(fastApiUrl + "/update-visibility")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(payload)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .timeout(java.time.Duration.ofSeconds(10))
+                    .block();
+            log.info("Successfully updated visibility in FastAPI for document ID: {}", documentId);
+        } catch (Exception e) {
+            log.error("Failed to update visibility in FastAPI for document ID: {}", documentId, e);
+        }
+    }
+
+    @Override
+    @Transactional
     public void deleteDocument(UUID documentId, UUID userId) {
         log.info("Deleting document ID: {}, requested by user ID: {}", documentId, userId);
 
@@ -454,6 +593,25 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         documentRepository.save(document);
+        
+        deleteFastApiVectorsAsync(documentId);
+    }
+
+    @Async("taskExecutor")
+    public void deleteFastApiVectorsAsync(UUID documentId) {
+        log.info("Deleting FastAPI vectors for document ID: {}", documentId);
+        try {
+            String deleteUrl = fastApiUrl.replace("/process", "/delete/") + documentId;
+            webClient.delete()
+                    .uri(deleteUrl)
+                    .retrieve()
+                    .toBodilessEntity()
+                    .timeout(java.time.Duration.ofSeconds(10))
+                    .block();
+            log.info("Successfully deleted vectors in FastAPI for document ID: {}", documentId);
+        } catch (Exception e) {
+            log.error("Failed to delete vectors in FastAPI for document ID: {}", documentId, e);
+        }
     }
 
     @Override
@@ -612,7 +770,7 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AppException(HttpStatus.BAD_REQUEST, "Only pending public documents can be approved");
         }
 
-        document.setStatus(DocumentStatus.COMPLETED);
+        document.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(document);
 
         // taạo thông báo cho người up
@@ -626,7 +784,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .build();
         notificationRepository.save(notification);
 
-        log.info("Document {} successfully approved, status set to COMPLETED. Triggering FastAPI RAG index.", documentId);
+        log.info("Document {} successfully approved, status set to PROCESSING. Triggering FastAPI RAG index.", documentId);
         
         triggerFastApiAsync(documentId);
     }

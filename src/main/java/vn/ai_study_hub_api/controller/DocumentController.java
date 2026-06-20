@@ -214,6 +214,28 @@ public class    DocumentController {
         return ApiResponse.success(results, "Search completed successfully.");
     }
 
+    @PutMapping("/{documentId}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Update a document", description = "Update document title, description, tags, and visibility.")
+    public ApiResponse<vn.ai_study_hub_api.controller.response.DocumentResponse> updateDocument(
+            @PathVariable("documentId") UUID documentId,
+            @RequestBody vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request) {
+
+        log.info("Request to update document ID: {}", documentId);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized update document attempt");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response = documentService.updateDocument(documentId, request, userId);
+
+        return ApiResponse.success(response, "Document updated successfully");
+    }
+
     @DeleteMapping("/{documentId}")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Soft-delete a document", description = "Soft-deletes a document and updates user storage quota.")
