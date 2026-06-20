@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -73,6 +74,23 @@ public class S3UploadProvider implements UploadProvider {
         } catch (Exception e) {
             log.error("Failed to generate S3 presigned URL for path: {}", storagePath, e);
             throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate file access link: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void delete(String storagePath) {
+        log.info("Deleting file from S3 bucket '{}' with key '{}'", bucketName, storagePath);
+        try {
+            DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(storagePath)
+                    .build();
+
+            s3Client.deleteObject(deleteObjectRequest);
+            log.info("Successfully deleted file from S3: {}", storagePath);
+        } catch (Exception e) {
+            log.error("Failed to delete file from S3 at path: {}", storagePath, e);
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to delete file from S3: " + e.getMessage());
         }
     }
 

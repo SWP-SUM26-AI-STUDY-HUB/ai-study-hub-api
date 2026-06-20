@@ -23,5 +23,6 @@ public interface AuthService {
     void resendOtp(String email);
     void forgotPassword(ForgotPasswordRequest request);
     void resetPassword(ResetPasswordRequest request);
+    void changePassword(java.util.UUID userId, ChangePasswordRequest request);
 
 }

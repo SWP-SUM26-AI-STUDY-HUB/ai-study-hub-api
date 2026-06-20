@@ -8,6 +8,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import java.util.Map;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -21,8 +23,7 @@ public class DocumentResponse {
     private String fileType;
     private String status;
     private String description;
-    private List<String> tags;
-    private String uploaderName;
+    private Map<Integer, String> tags;
     private UploaderResponse uploader;
     private String visibility;
     private LocalDateTime createdAt;

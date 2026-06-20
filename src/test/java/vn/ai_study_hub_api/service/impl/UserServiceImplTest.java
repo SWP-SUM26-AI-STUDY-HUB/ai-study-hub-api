@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
+import vn.ai_study_hub_api.controller.request.UpdateProfileRequest;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -121,16 +122,55 @@ public class UserServiceImplTest {
         // Assert
         assertNotNull(responseList, "The response list should not be null");
         assertTrue(responseList.isEmpty(), "The response list should be empty");
-
         verify(userRepository, times(1)).findAll();
     }
 
     @Test
-    void updateProfile_Success_WithFullNameAndAvatar() throws java.io.IOException {
+    void updateProfile_Success_WithFullNameAndBio() {
         // Arrange
         UUID userId = mockUser1.getId();
         String newFullName = "Updated Alice";
+        String newBio = "My new bio";
+        UpdateProfileRequest request = UpdateProfileRequest.builder()
+                .fullName(newFullName)
+                .bio(newBio)
+                .build();
+        
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser1));
+        when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        
+        // Act
+        UserResponse response = userService.updateProfile(userId, request);
+        
+        // Assert
+        assertNotNull(response);
+        assertEquals(newFullName, response.getFullName());
+        assertEquals(newBio, response.getBio());
+        verify(userRepository, times(1)).save(any(UserEntity.class));
+    }
+
+    @Test
+    void updateProfile_Failure_UserNotFound() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        UpdateProfileRequest request = UpdateProfileRequest.builder()
+                .fullName("New Name")
+                .build();
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        
+        // Act & Assert
+        AppException exception = assertThrows(AppException.class, () -> 
+                userService.updateProfile(userId, request));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void updateAvatar_Success_WithValidFile() throws java.io.IOException {
+        // Arrange
+        UUID userId = mockUser1.getId();
         org.springframework.web.multipart.MultipartFile mockAvatar = mock(org.springframework.web.multipart.MultipartFile.class);
+        
+        mockUser1.setAvatarUrl("avatars/old-avatar.png");
         
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser1));
         when(mockAvatar.isEmpty()).thenReturn(false);
@@ -139,47 +179,41 @@ public class UserServiceImplTest {
         when(mockAvatar.getOriginalFilename()).thenReturn("avatar.png");
         when(uploadProvider.generatePresignedUrl(anyString())).thenReturn("http://presigned-url-mock.com/avatar");
         
-        // Mock userRepository.save
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         
-        String newBio = "My new bio";
-        
         // Act
-        UserResponse response = userService.updateProfile(userId, newFullName, newBio, mockAvatar);
+        UserResponse response = userService.updateAvatar(userId, mockAvatar);
         
         // Assert
         assertNotNull(response);
-        assertEquals(newFullName, response.getFullName());
-        assertEquals(newBio, response.getBio());
         assertEquals("http://presigned-url-mock.com/avatar", response.getAvatarUrl());
         verify(uploadProvider, times(1)).upload(any(File.class), anyString(), eq("image/png"));
         verify(userRepository, times(1)).save(any(UserEntity.class));
+        verify(uploadProvider, times(1)).delete("avatars/old-avatar.png");
     }
 
     @Test
-    void updateProfile_Failure_FileSizeExceedsLimit() {
+    void updateAvatar_Failure_FileSizeExceedsLimit() {
         // Arrange
         UUID userId = mockUser1.getId();
         org.springframework.web.multipart.MultipartFile mockAvatar = mock(org.springframework.web.multipart.MultipartFile.class);
         
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser1));
         when(mockAvatar.isEmpty()).thenReturn(false);
         when(mockAvatar.getSize()).thenReturn(3L * 1024L * 1024L); // 3MB (exceeds 2MB)
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
-                userService.updateProfile(userId, "New Name", null, mockAvatar));
+                userService.updateAvatar(userId, mockAvatar));
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
         assertTrue(exception.getMessage().contains("exceeds the 2MB limit"));
     }
 
     @Test
-    void updateProfile_Failure_UnsupportedFileFormat() {
+    void updateAvatar_Failure_UnsupportedFileFormat() {
         // Arrange
         UUID userId = mockUser1.getId();
         org.springframework.web.multipart.MultipartFile mockAvatar = mock(org.springframework.web.multipart.MultipartFile.class);
         
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser1));
         when(mockAvatar.isEmpty()).thenReturn(false);
         when(mockAvatar.getSize()).thenReturn(1024L);
         when(mockAvatar.getContentType()).thenReturn("image/gif"); // gif is unsupported
@@ -187,20 +221,26 @@ public class UserServiceImplTest {
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
-                userService.updateProfile(userId, "New Name", null, mockAvatar));
+                userService.updateAvatar(userId, mockAvatar));
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
         assertTrue(exception.getMessage().contains("Unsupported file format"));
     }
 
     @Test
-    void updateProfile_Failure_UserNotFound() {
+    void updateAvatar_Failure_UserNotFound() {
         // Arrange
         UUID userId = UUID.randomUUID();
+        org.springframework.web.multipart.MultipartFile mockAvatar = mock(org.springframework.web.multipart.MultipartFile.class);
+        
+        when(mockAvatar.isEmpty()).thenReturn(false);
+        when(mockAvatar.getSize()).thenReturn(1024L);
+        when(mockAvatar.getContentType()).thenReturn("image/png");
+        when(mockAvatar.getOriginalFilename()).thenReturn("avatar.png");
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
-                userService.updateProfile(userId, "New Name", null, null));
+                userService.updateAvatar(userId, mockAvatar));
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
     }
 }

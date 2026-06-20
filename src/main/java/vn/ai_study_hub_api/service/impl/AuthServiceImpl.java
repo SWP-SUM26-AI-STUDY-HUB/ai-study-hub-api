@@ -362,4 +362,18 @@ public class AuthServiceImpl implements AuthService {
 
         redisTokenService.deleteOtp("reset:" + request.getToken());
     }
+
+    @Override
+    @Transactional
+    public void changePassword(java.util.UUID userId, ChangePasswordRequest request) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found!"));
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Invalid current password!");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+    }
 }
