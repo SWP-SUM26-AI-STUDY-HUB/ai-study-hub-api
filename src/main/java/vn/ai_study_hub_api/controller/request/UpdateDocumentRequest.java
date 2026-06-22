@@ -13,8 +13,9 @@ public class UpdateDocumentRequest {
     private String description;
     private String visibility;
 
+    @io.swagger.v3.oas.annotations.media.Schema(description = "List of tag IDs associated with the document", example = "[\"int\"]", requiredMode = io.swagger.v3.oas.annotations.media.Schema.RequiredMode.NOT_REQUIRED)
     @Setter(AccessLevel.NONE)
-    private List<String> tags;
+    private List<Integer> tags;
 
     @JsonSetter
     public void setTags(Object tags) {
@@ -24,9 +25,12 @@ public class UpdateDocumentRequest {
         }
         if (tags instanceof List) {
             this.tags = ((List<?>) tags).stream()
-                    .map(Object::toString)
-                    .map(String::trim)
-                    .filter(s -> !s.isEmpty())
+                    .map(item -> {
+                        if (item instanceof Number) {
+                            return ((Number) item).intValue();
+                        }
+                        return Integer.parseInt(item.toString().trim());
+                    })
                     .collect(java.util.stream.Collectors.toList());
         } else if (tags instanceof String) {
             String str = (String) tags;
@@ -36,8 +40,11 @@ public class UpdateDocumentRequest {
                 this.tags = java.util.Arrays.stream(str.split(","))
                         .map(String::trim)
                         .filter(s -> !s.isEmpty())
+                        .map(Integer::parseInt)
                         .collect(java.util.stream.Collectors.toList());
             }
+        } else if (tags instanceof Number) {
+            this.tags = java.util.Collections.singletonList(((Number) tags).intValue());
         }
     }
 }
