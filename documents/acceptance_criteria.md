@@ -396,7 +396,6 @@ For testing edge cases related to permissions and storage limits:
 
 > [!NOTE]
 > To control API costs, the system uses the AI Guard middleware to intercept chat requests and block users who have exceeded their plan's daily chat limits.
-> The response latency for context payloads under 100 pages must be under 5.0 seconds.
 
 #### Scenario 1: Multi-document chat within quota (Happy Path)
 - **Given** The user is Premium, and has used 10 out of their 500 daily requests.
@@ -416,7 +415,7 @@ For testing edge cases related to permissions and storage limits:
 - **When** The user submits a new chat query.
 - **Then** The AI Guard middleware detects that the daily quota has been reached.
 - **And** The system blocks the request immediately without calling the LLM API.
-- **And** The system returns the error: "Daily AI request limit reached. Please upgrade to Premium for unlimited chat".
+- **And** The system returns the error: "Daily AI request limit reached. Please upgrade to Premium for more request chat".
 - **And** The request count does not increase.
 
 ---

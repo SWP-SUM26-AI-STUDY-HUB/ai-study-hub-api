@@ -65,6 +65,8 @@ aws:
 
 fastapi:
   rag-process-url: ${FASTAPI_RAG_PROCESS_URL:http://localhost:8000/api/v1/rag/process}
+  rag-chat-url: ${FASTAPI_RAG_CHAT_URL:http://localhost:8000/api/v1/chat}
+  chat-timeout-seconds: ${FASTAPI_CHAT_TIMEOUT_SECONDS:30}
 
 app:
   share-url-prefix: ${SHARE_URL_PREFIX:http://localhost:8080/api/v1/documents/shared/}
