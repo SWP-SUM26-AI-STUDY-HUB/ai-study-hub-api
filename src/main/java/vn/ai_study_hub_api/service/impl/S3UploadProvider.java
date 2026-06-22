@@ -78,6 +78,17 @@ public class S3UploadProvider implements UploadProvider {
     }
 
     @Override
+    public String getPublicUrl(String storagePath) {
+        log.info("Generating S3 public URL for key '{}' in bucket '{}'", storagePath, bucketName);
+        try {
+            return s3Client.utilities().getUrl(builder -> builder.bucket(bucketName).key(storagePath)).toExternalForm();
+        } catch (Exception e) {
+            log.error("Failed to generate S3 public URL for path: {}", storagePath, e);
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate file access link: " + e.getMessage());
+        }
+    }
+
+    @Override
     public void delete(String storagePath) {
         log.info("Deleting file from S3 bucket '{}' with key '{}'", bucketName, storagePath);
         try {

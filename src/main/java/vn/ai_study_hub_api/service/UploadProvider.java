@@ -10,6 +10,8 @@ public interface UploadProvider {
 
     void delete(String storagePath);
 
+    String getPublicUrl(String storagePath);
+
     /**
      * Generates a unique, structured storage path/key for the file.
      * Format: {userId}/{documentId}.{fileExtension}
