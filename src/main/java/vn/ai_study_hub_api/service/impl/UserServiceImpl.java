@@ -88,6 +88,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    @Transactional
     public UserResponse updateAvatar(UUID userId, MultipartFile avatar) {
         if (avatar == null || avatar.isEmpty()) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Avatar file is required.");
@@ -105,18 +106,23 @@ public class UserServiceImpl implements UserService {
             extension = originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase();
         }
 
-        boolean isValidFormat = (contentType != null && (contentType.equals("image/jpeg") || contentType.equals("image/png")))
-                || extension.equals("jpg") || extension.equals("jpeg") || extension.equals("png");
+        boolean isValidContentType = contentType != null && (contentType.equals("image/jpeg") || contentType.equals("image/png"));
+        boolean isValidExtension = extension.equals("jpg") || extension.equals("jpeg") || extension.equals("png");
 
-        if (!isValidFormat) {
+        if (!isValidContentType || (!extension.isEmpty() && !isValidExtension)) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format. Only JPEG and PNG are allowed");
+        }
+
+        String finalExtension = extension;
+        if (finalExtension.isEmpty() && contentType != null) {
+            finalExtension = contentType.equals("image/png") ? "png" : "jpg";
         }
 
         UserEntity existingUser = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
 
         String oldAvatarUrl = existingUser.getAvatarUrl();
-        String s3Key = "avatars/" + userId.toString() + "-" + UUID.randomUUID().toString() + "." + (extension.isEmpty() ? "jpg" : extension);
+        String s3Key = "avatars/" + userId.toString() + "-" + UUID.randomUUID().toString() + "." + finalExtension;
 
         File tempFile = null;
         try {
@@ -162,9 +168,9 @@ public class UserServiceImpl implements UserService {
         if (resolvedAvatarUrl != null && !resolvedAvatarUrl.isEmpty() 
                 && !resolvedAvatarUrl.startsWith("http://") && !resolvedAvatarUrl.startsWith("https://")) {
             try {
-                resolvedAvatarUrl = uploadProvider.generatePresignedUrl(resolvedAvatarUrl);
+                resolvedAvatarUrl = uploadProvider.getPublicUrl(resolvedAvatarUrl);
             } catch (Exception e) {
-                log.warn("Failed to generate presigned URL for avatar: {}", resolvedAvatarUrl, e);
+                log.warn("Failed to generate public URL for avatar: {}", resolvedAvatarUrl, e);
             }
         }
 
