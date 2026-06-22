@@ -33,7 +33,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Documents", description = "Endpoints for study document management")
-public class    DocumentController {
+public class        DocumentController {
 
     private final DocumentService documentService;
     private final UploadProvider uploadProvider;
