@@ -70,4 +70,17 @@ public class TagServiceImpl implements TagService {
                         .build())
                 .collect(Collectors.toList());
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TagResponse> getAllTags() {
+        log.info("Retrieving all tags");
+        List<TagEntity> tags = tagRepository.findAll();
+        return tags.stream()
+                .map(tag -> TagResponse.builder()
+                        .id(tag.getId())
+                        .label(tag.getLabel())
+                        .build())
+                .collect(Collectors.toList());
+    }
 }

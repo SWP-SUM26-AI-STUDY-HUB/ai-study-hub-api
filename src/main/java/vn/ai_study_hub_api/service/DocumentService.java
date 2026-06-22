@@ -42,4 +42,6 @@ public interface DocumentService {
     void rejectDocument(UUID documentId, String reason);
 
     void triggerFastApiAsync(UUID documentId);
+
+    DocumentResponse getDocumentById(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
 }

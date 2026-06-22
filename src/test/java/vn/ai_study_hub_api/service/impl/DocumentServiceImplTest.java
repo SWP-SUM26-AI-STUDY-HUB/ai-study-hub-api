@@ -261,6 +261,7 @@ public class DocumentServiceImplTest {
     @Test
     void handleFastApiCallback_Success_Private() {
         mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setStatus(DocumentStatus.PROCESSING);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.save(any(DocumentEntity.class))).thenReturn(mockDocument);
 
@@ -276,6 +277,7 @@ public class DocumentServiceImplTest {
     @Test
     void handleFastApiCallback_Success_Public() {
         mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setStatus(DocumentStatus.PROCESSING);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.save(any(DocumentEntity.class))).thenReturn(mockDocument);
 
@@ -290,6 +292,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void handleFastApiCallback_Failed() {
+        mockDocument.setStatus(DocumentStatus.PROCESSING);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.save(any(DocumentEntity.class))).thenReturn(mockDocument);
 
@@ -1013,7 +1016,7 @@ public class DocumentServiceImplTest {
 
         documentService.approveDocument(documentId);
 
-        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatus());
+        assertEquals(DocumentStatus.PROCESSING, mockDocument.getStatus());
         verify(documentRepository, times(1)).save(mockDocument);
         verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
     }

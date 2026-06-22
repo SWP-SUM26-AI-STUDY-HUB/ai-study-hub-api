@@ -294,4 +294,24 @@ public class        DocumentController {
         vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getDownloadAccess(id, userDetails);
         return ApiResponse.success(response, "Document download access generated successfully");
     }
+
+    @GetMapping("/{documentId}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get document by ID", description = "Retrieves the details of a single document by ID. Public documents can be retrieved by anyone, private documents require ownership.")
+    public ApiResponse<vn.ai_study_hub_api.controller.response.DocumentResponse> getDocument(
+            @PathVariable("documentId") UUID documentId) {
+        log.info("Received request to get document by ID: {}", documentId);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        CustomUserDetails userDetails = null;
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            userDetails = (CustomUserDetails) authentication.getPrincipal();
+        }
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.getDocumentById(documentId, userDetails);
+        return ApiResponse.success(response, "Document retrieved successfully");
+    }
 }

@@ -64,6 +64,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/documents/{id:[a-fA-F0-9\\-]{36}}").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/register",
@@ -80,6 +81,8 @@ public class SecurityConfig {
                                 "/api/v1/documents/*/preview",
                                 "/api/v1/internal/**",
                                 "/api/v1/documents/shared/**",
+                                "/api/v1/tags",
+                                "/api/v1/tags/search",
                                 "/api/internal/**",
                                 "/login/oauth2/**",
                                 "/swagger-ui/**",

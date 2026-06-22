@@ -177,7 +177,7 @@ public class UserServiceImplTest {
         when(mockAvatar.getSize()).thenReturn(1024L * 1024L); // 1MB
         when(mockAvatar.getContentType()).thenReturn("image/png");
         when(mockAvatar.getOriginalFilename()).thenReturn("avatar.png");
-        when(uploadProvider.generatePresignedUrl(anyString())).thenReturn("http://presigned-url-mock.com/avatar");
+        when(uploadProvider.getPublicUrl(anyString())).thenReturn("http://presigned-url-mock.com/avatar");
         
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         

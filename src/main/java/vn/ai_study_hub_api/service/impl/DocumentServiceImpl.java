@@ -860,4 +860,71 @@ public class DocumentServiceImpl implements DocumentService {
             updateDocumentStatus(documentId, DocumentStatus.FAILED);
         }
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public DocumentResponse getDocumentById(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails) {
+        log.info("Getting document details for ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        boolean hasAccess = false;
+        if (DocumentVisibility.PUBLIC.equals(document.getVisibility()) && DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            hasAccess = true;
+        } else {
+            if (userDetails != null) {
+                boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(userDetails.getId());
+                boolean isAdmin = userDetails.getAuthorities().stream()
+                        .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+                if (isOwner || isAdmin) {
+                    hasAccess = true;
+                }
+            }
+        }
+
+        if (!hasAccess) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
+        }
+
+        // Map to DocumentResponse with safe null checks
+        vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
+        if (document.getUploader() != null) {
+            String finalUploaderName = document.getUploader().getFullName();
+            if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
+                finalUploaderName = document.getUploader().getEmail();
+            }
+            uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
+                    .id(document.getUploader().getId())
+                    .fullName(finalUploaderName)
+                    .avatarUrl(document.getUploader().getAvatarUrl())
+                    .build();
+        }
+
+        Map<Integer, String> tags = null;
+        if (document.getTags() != null && !document.getTags().isEmpty()) {
+            tags = document.getTags().stream()
+                    .collect(Collectors.toMap(TagEntity::getId, TagEntity::getLabel));
+        }
+
+        return DocumentResponse.builder()
+                .id(document.getId())
+                .title(document.getTitle())
+                .fileName(document.getTitle())
+                .fileUrl(document.getFileUrl())
+                .fileSize(document.getFileSizeBytes())
+                .fileType(document.getFileType())
+                .status(document.getStatus() != null ? document.getStatus().name() : null)
+                .description(document.getDescription())
+                .tags(tags)
+                .uploader(uploaderResponse)
+                .visibility(document.getVisibility() != null ? document.getVisibility().name() : null)
+                .createdAt(document.getCreatedAt())
+                .build();
+    }
 }

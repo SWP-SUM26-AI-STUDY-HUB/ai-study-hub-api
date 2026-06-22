@@ -22,6 +22,15 @@ public class TagController {
 
     private final TagService tagService;
 
+    @GetMapping
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get all tags", description = "Retrieves a list of all tags in the system.")
+    public ApiResponse<List<TagResponse>> getAllTags() {
+        log.info("Received request to get all tags");
+        List<TagResponse> tags = tagService.getAllTags();
+        return ApiResponse.success(tags, "All tags retrieved successfully");
+    }
+
     @GetMapping("/search")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Search tags by keyword", description = "Suggests tags matching the keyword (case-insensitive) for auto-completion.")
