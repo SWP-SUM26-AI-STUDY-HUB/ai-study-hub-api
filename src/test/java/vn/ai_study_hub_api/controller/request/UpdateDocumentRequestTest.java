@@ -11,25 +11,25 @@ public class UpdateDocumentRequestTest {
 
     @Test
     public void testDeserializeTagsAsArray() throws Exception {
-        String json = "{\"tags\":[\"Math\", \"AI\"]}";
+        String json = "{\"tags\":[1, 2]}";
         UpdateDocumentRequest request = objectMapper.readValue(json, UpdateDocumentRequest.class);
         
         assertNotNull(request.getTags());
         assertEquals(2, request.getTags().size());
-        assertEquals("Math", request.getTags().get(0));
-        assertEquals("AI", request.getTags().get(1));
+        assertEquals(1, request.getTags().get(0));
+        assertEquals(2, request.getTags().get(1));
     }
 
     @Test
     public void testDeserializeTagsAsString() throws Exception {
-        String json = "{\"tags\":\"Math, AI, Calculus\"}";
+        String json = "{\"tags\":\"1, 2, 3\"}";
         UpdateDocumentRequest request = objectMapper.readValue(json, UpdateDocumentRequest.class);
         
         assertNotNull(request.getTags());
         assertEquals(3, request.getTags().size());
-        assertEquals("Math", request.getTags().get(0));
-        assertEquals("AI", request.getTags().get(1));
-        assertEquals("Calculus", request.getTags().get(2));
+        assertEquals(1, request.getTags().get(0));
+        assertEquals(2, request.getTags().get(1));
+        assertEquals(3, request.getTags().get(2));
     }
 
     @Test

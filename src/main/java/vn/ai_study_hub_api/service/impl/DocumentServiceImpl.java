@@ -458,15 +458,10 @@ public class DocumentServiceImpl implements DocumentService {
 
         if (request.getTags() != null) {
             List<TagEntity> tagEntities = new java.util.ArrayList<>();
-            for (String tagStr : request.getTags()) {
-                try {
-                    Integer tagId = Integer.parseInt(tagStr);
-                    TagEntity tagEntity = tagRepository.findById(tagId)
-                            .orElseThrow(() -> new IllegalArgumentException("Tag not found with ID: " + tagId));
-                    tagEntities.add(tagEntity);
-                } catch (NumberFormatException e) {
-                    throw new IllegalArgumentException("Invalid tag ID format: " + tagStr);
-                }
+            for (Integer tagId : request.getTags()) {
+                TagEntity tagEntity = tagRepository.findById(tagId)
+                        .orElseThrow(() -> new IllegalArgumentException("Tag not found with ID: " + tagId));
+                tagEntities.add(tagEntity);
             }
             document.setTags(tagEntities);
         }
