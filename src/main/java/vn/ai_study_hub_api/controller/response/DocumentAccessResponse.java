@@ -3,6 +3,7 @@ package vn.ai_study_hub_api.controller.response;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -29,4 +30,16 @@ public class DocumentAccessResponse {
     private LocalDateTime createdAt;
 
     private String description;
+
+    @JsonProperty("uploader_name")
+    private String uploaderName;
+
+    @JsonProperty("rating")
+    private Double rating;
+
+    @JsonProperty("review_count")
+    private Long reviewCount;
+
+    @JsonProperty("tags")
+    private List<String> tags;
 }
