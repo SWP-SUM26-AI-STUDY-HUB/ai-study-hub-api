@@ -8,11 +8,14 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vn.ai_study_hub_api.controller.response.UserResponse;
+import vn.ai_study_hub_api.controller.response.UserStorageResponse;
+import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserRole;   // SỬA: Import Enum Role nếu có
 import vn.ai_study_hub_api.model.UserStatus; // SỬA: Import Enum Status nếu có
 import org.springframework.http.HttpStatus;
 import vn.ai_study_hub_api.exception.AppException;
+import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
 import vn.ai_study_hub_api.controller.request.UpdateProfileRequest;
@@ -39,6 +42,9 @@ public class UserServiceImplTest {
 
     @Mock
     private UploadProvider uploadProvider;
+
+    @Mock
+    private StoragePlanRepository storagePlanRepository;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -177,7 +183,7 @@ public class UserServiceImplTest {
         when(mockAvatar.getSize()).thenReturn(1024L * 1024L); // 1MB
         when(mockAvatar.getContentType()).thenReturn("image/png");
         when(mockAvatar.getOriginalFilename()).thenReturn("avatar.png");
-        when(uploadProvider.generatePresignedUrl(anyString())).thenReturn("http://presigned-url-mock.com/avatar");
+        when(uploadProvider.getPublicUrl(anyString())).thenReturn("http://presigned-url-mock.com/avatar");
         
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         
@@ -242,5 +248,97 @@ public class UserServiceImplTest {
         AppException exception = assertThrows(AppException.class, () -> 
                 userService.updateAvatar(userId, mockAvatar));
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getUserStorage_Success() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .planId(2)
+                .storageUsed(536870912L) // 0.5 GB in bytes
+                .build();
+
+        StoragePlanEntity plan = StoragePlanEntity.builder()
+                .id(2)
+                .name("Premium")
+                .storageLimit(10L) // 10 GB
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(storagePlanRepository.findById(2)).thenReturn(Optional.of(plan));
+
+        // Act
+        UserStorageResponse response = userService.getUserStorage(userId);
+
+        // Assert
+        assertNotNull(response);
+        assertEquals(2, response.getPlanId());
+        assertEquals("Premium", response.getPlanName());
+        assertEquals(536870912L, response.getStorageUsed());
+        assertEquals(10L * 1024 * 1024 * 1024, response.getStorageLimit());
+    }
+
+    @Test
+    void getUserStorage_Success_WithDefaultPlanId() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .planId(null) // should default to 1
+                .storageUsed(1073741824L) // 1 GB
+                .build();
+
+        StoragePlanEntity plan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free Plan")
+                .storageLimit(2L) // 2 GB
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(plan));
+
+        // Act
+        UserStorageResponse response = userService.getUserStorage(userId);
+
+        // Assert
+        assertNotNull(response);
+        assertEquals(1, response.getPlanId());
+        assertEquals("Free Plan", response.getPlanName());
+        assertEquals(1073741824L, response.getStorageUsed());
+        assertEquals(2L * 1024 * 1024 * 1024, response.getStorageLimit());
+    }
+
+    @Test
+    void getUserStorage_Failure_UserNotFound() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        // Act & Assert
+        AppException exception = assertThrows(AppException.class, () ->
+                userService.getUserStorage(userId));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertTrue(exception.getMessage().contains("User profile not found"));
+    }
+
+    @Test
+    void getUserStorage_Failure_PlanNotFound() {
+        // Arrange
+        UUID userId = UUID.randomUUID();
+        UserEntity user = UserEntity.builder()
+                .id(userId)
+                .planId(999)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(storagePlanRepository.findById(999)).thenReturn(Optional.empty());
+
+        // Act & Assert
+        AppException exception = assertThrows(AppException.class, () ->
+                userService.getUserStorage(userId));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertTrue(exception.getMessage().contains("Storage plan not found"));
     }
 }

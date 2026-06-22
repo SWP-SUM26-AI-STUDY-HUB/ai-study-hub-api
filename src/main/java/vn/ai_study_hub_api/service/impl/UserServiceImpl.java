@@ -7,10 +7,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import vn.ai_study_hub_api.controller.response.UserResponse;
+import vn.ai_study_hub_api.controller.response.UserStorageResponse;
 import vn.ai_study_hub_api.exception.AppException;
+import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
+import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
 import vn.ai_study_hub_api.service.UserService;
@@ -29,11 +32,13 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final UploadProvider uploadProvider;
+    private final StoragePlanRepository storagePlanRepository;
 
     @Autowired
-    public UserServiceImpl(UserRepository userRepository, UploadProvider uploadProvider) {
+    public UserServiceImpl(UserRepository userRepository, UploadProvider uploadProvider, StoragePlanRepository storagePlanRepository) {
         this.userRepository = userRepository;
         this.uploadProvider = uploadProvider;
+        this.storagePlanRepository = storagePlanRepository;
     }
 
     @Override
@@ -182,6 +187,27 @@ public class UserServiceImpl implements UserService {
                 .role(user.getRole() != null ? user.getRole().name() : null)
                 .status(user.getStatus() != null ? user.getStatus().name() : null)
                 .bio(user.getBio())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserStorageResponse getUserStorage(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User profile not found."));
+
+        Integer planId = user.getPlanId() != null ? user.getPlanId() : 1;
+        StoragePlanEntity plan = storagePlanRepository.findById(planId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Storage plan not found with ID: " + planId));
+
+        long limitInBytes = plan.getStorageLimit() * 1024L * 1024L * 1024L;
+        long usedInBytes = user.getStorageUsed() != null ? user.getStorageUsed() : 0L;
+
+        return UserStorageResponse.builder()
+                .planId(plan.getId())
+                .planName(plan.getName())
+                .storageUsed(usedInBytes)
+                .storageLimit(limitInBytes)
                 .build();
     }
 

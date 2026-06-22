@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.response.UserResponse;
+import vn.ai_study_hub_api.controller.response.UserStorageResponse;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.UserService;
 import vn.ai_study_hub_api.service.AuthService;
@@ -39,6 +40,15 @@ public class UserController {
         UUID userId = getCurrentUserId();
         UserResponse response = userService.getMyProfile(userId);
         return ApiResponse.success(response, "Profile retrieved successfully.");
+    }
+
+    @GetMapping("/storage")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get current user storage usage", description = "Returns details about the user's current storage usage, total limit, and subscription plan")
+    public ApiResponse<UserStorageResponse> getUserStorage() {
+        UUID userId = getCurrentUserId();
+        UserStorageResponse response = userService.getUserStorage(userId);
+        return ApiResponse.success(response, "Storage usage retrieved successfully.");
     }
 
     @PutMapping(value = "/edit-profile", consumes = MediaType.APPLICATION_JSON_VALUE)
