@@ -238,14 +238,19 @@ public class ChatServiceImpl implements ChatService {
             return List.of();
         }
         List<CitationView> result = new ArrayList<>();
+        int index = 0;
         for (JsonNode entry : docs) {
             try {
+                index++;
                 JsonNode meta = entry.path("metadata");
                 UUID docId = parseUuid(textOrNull(meta, "document_id"));
                 String fileName = firstNonBlank(textOrNull(meta, "source_file"), textOrNull(meta, "document_title"));
                 Integer pageNumber = pageNumber(meta);
                 String snippet = buildSnippet(entry.path("content").asText(""));
+                // 1-based id matches the [N] source tag the RAG service injects into the
+                // answer, because debug.documents preserves the retrieval/context order.
                 result.add(CitationView.builder()
+                        .id(index)
                         .documentId(docId)
                         .fileName(fileName)
                         .pageNumber(pageNumber)

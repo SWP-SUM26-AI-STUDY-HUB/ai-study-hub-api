@@ -110,12 +110,43 @@ class ChatServiceImplTest {
         assertEquals(1, response.getCitations().size());
         CitationView citation = response.getCitations().get(0);
         assertEquals(documentId, citation.getDocumentId());
+        assertEquals(1, citation.getId());
         assertEquals("a.pdf", citation.getFileName());
         assertEquals(3, citation.getPageNumber());
         assertEquals("actual snippet body text", citation.getSnippet());
 
         verify(chatMessageRepository, times(2)).save(any());
         verify(chatbotClient, times(1)).chat(eq("What is X?"), eq(userId), eq(documentId));
+    }
+
+    @Test
+    void chat_multipleDocuments_assignsSequentialIds() throws Exception {
+        when(aiQuotaService.checkAndIncrement(userId)).thenReturn(new AiQuotaService.QuotaInfo(1, 15, 14));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(ownedDocument));
+
+        StringBuilder docs = new StringBuilder("[");
+        for (int i = 1; i <= 3; i++) {
+            if (i > 1) {
+                docs.append(",");
+            }
+            docs.append("{\"content\":\"[Title: A, Page: ").append(i).append("]\\nbody ").append(i).append("\",")
+                    .append("\"metadata\":{\"document_id\":\"").append(documentId)
+                    .append("\",\"source_file\":\"a.pdf\",\"page_number\":").append(i).append("}}");
+        }
+        docs.append("]");
+        JsonNode debug = objectMapper.readTree("{\"documents\":" + docs + "}");
+
+        when(chatbotClient.chat(eq("q"), eq(userId), eq(documentId)))
+                .thenReturn(new ChatbotClient.ChatbotResponse(true, "ok",
+                        new ChatbotClient.ResponseData("answer [1][3]", debug)));
+
+        ChatResponse response = chatService.chat(request("q", documentId, null), userId);
+
+        assertEquals(3, response.getCitations().size());
+        assertEquals(1, response.getCitations().get(0).getId());
+        assertEquals(2, response.getCitations().get(1).getId());
+        assertEquals(3, response.getCitations().get(2).getId());
     }
 
     @Test

@@ -12,6 +12,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class CitationView {
+    /** 1-based index matching the [N] source tag embedded in the answer text. */
+    private Integer id;
     private UUID documentId;
     private String fileName;
     private Integer pageNumber;

@@ -3,6 +3,8 @@ package vn.ai_study_hub_api.model;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.ColumnTransformer;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.springframework.data.domain.Persistable;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -34,6 +36,7 @@ public class ChatMessageEntity implements Persistable<UUID> {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "citations", columnDefinition = "jsonb")
     private String citations;
 
