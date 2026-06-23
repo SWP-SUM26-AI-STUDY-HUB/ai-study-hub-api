@@ -128,4 +128,37 @@ public class UserSanctionServiceImpl implements UserSanctionService {
         redisTemplate.expire(redisKey, 24, TimeUnit.HOURS);
         log.debug("Tracked token for user: {}", userId);
     }
+
+    @Override
+    @Transactional
+    public void reactivateUser(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (user.getStatus() == UserStatus.ACTIVE) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "User account is already active");
+        }
+
+        user.setStatus(UserStatus.ACTIVE);
+        userRepository.save(user);
+
+        // Log reactivation in violation histories
+        ViolationHistoryEntity violation = ViolationHistoryEntity.builder()
+                .user(user)
+                .reason("Account reactivated by administrator")
+                .status("ACTIVE")
+                .build();
+        violationHistoryRepository.save(violation);
+
+        // Send reactivation notification
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(user)
+                .title("Tài khoản được mở khóa (Reactivated)")
+                .content("Tài khoản của bạn đã được quản trị viên mở khóa và kích hoạt lại.")
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
+
+        log.info("Successfully reactivated user: {}", userId);
+    }
 }
