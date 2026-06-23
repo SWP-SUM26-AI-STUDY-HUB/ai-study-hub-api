@@ -14,6 +14,7 @@ import vn.ai_study_hub_api.controller.response.ReviewResponse;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.ReviewService;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -37,6 +38,17 @@ public class ReviewController {
         UUID userId = getCurrentUserId();
         ReviewResponse response = reviewService.submitReview(documentId, userId, request);
         return ApiResponse.success(response, "Your review has been submitted successfully.");
+    }
+
+    @GetMapping("/{documentId}/reviews")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(
+            summary = "Get reviews for a document",
+            description = "Retrieves all reviews submitted for a public, approved document. Accessible by guests and authenticated users."
+    )
+    public ApiResponse<List<ReviewResponse>> getReviews(@PathVariable UUID documentId) {
+        List<ReviewResponse> response = reviewService.getReviews(documentId);
+        return ApiResponse.success(response, "Reviews retrieved successfully.");
     }
 
     private UUID getCurrentUserId() {
