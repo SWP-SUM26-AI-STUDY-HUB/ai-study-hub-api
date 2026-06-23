@@ -17,7 +17,7 @@ public interface TrendingDocumentRepository extends JpaRepository<DocumentEntity
 
     @Query(value = "SELECT d.id, d.uploader_id, d.title, d.file_url, d.file_type, d.file_size_bytes, " +
             "UPPER(d.status::text) as status, UPPER(d.visibility::text) as visibility, " +
-            "d.link_share, d.created_at, d.updated_at, d.deleted_at, d.summary, d.description FROM documents d " +
+            "d.link_share, d.created_at, d.updated_at, d.deleted_at, d.summary, d.description, d.rejection_reason FROM documents d " +
             "LEFT JOIN (SELECT document_id, AVG(rating) as avg_rating, COUNT(id) as review_count " +
             "           FROM reviews GROUP BY document_id) r ON d.id = r.document_id " +
             "WHERE cast(d.visibility as text) = 'public' " +
