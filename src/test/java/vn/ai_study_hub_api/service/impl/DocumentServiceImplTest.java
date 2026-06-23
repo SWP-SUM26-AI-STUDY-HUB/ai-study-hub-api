@@ -83,6 +83,7 @@ public class DocumentServiceImplTest {
 
         // Inject the Value annotation values since MockitoExtension won't inject them
         org.springframework.test.util.ReflectionTestUtils.setField(documentService, "fastApiUrl", "http://localhost:8000/api");
+        org.springframework.test.util.ReflectionTestUtils.setField(documentService, "maxFileSizeBytes", 52428800L);
 
         mockUser = UserEntity.builder()
                 .id(userId)
@@ -419,6 +420,21 @@ public class DocumentServiceImplTest {
                 documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void initiateUpload_FileSizeExceeded() {
+        org.springframework.web.multipart.MultipartFile file = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("big.pdf");
+        when(file.getSize()).thenReturn(52428801L); // 50MB + 1 byte
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+                documentService.initiateUpload(file, "Big Doc", List.of(1), null, DocumentVisibility.PRIVATE, userId)
+        );
+        assertEquals("Uploaded file size exceeds the 50MB limit. Please choose another file", exception.getMessage());
         verify(documentRepository, never()).save(any());
     }
 

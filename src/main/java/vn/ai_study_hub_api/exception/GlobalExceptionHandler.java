@@ -6,6 +6,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import vn.ai_study_hub_api.common.ApiResponse;
@@ -61,6 +62,19 @@ public class GlobalExceptionHandler {
                 .message("Validation failed.")
                 .data(errors)
                 .build();
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Handle multipart uploads that exceed the configured multipart ceiling.
+     * Returns a structured 400 instead of falling through to the generic 500 handler,
+     * so oversized uploads get the same clean response as other upload-validation errors.
+     * @param ex MaxUploadSizeExceededException
+     * @return ResponseEntity with ApiResponse
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        ApiResponse<Void> response = ApiResponse.error("Uploaded file size exceeds the maximum allowed limit. Please choose another file");
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 

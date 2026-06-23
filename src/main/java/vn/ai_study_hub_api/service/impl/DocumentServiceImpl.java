@@ -53,6 +53,9 @@ public class DocumentServiceImpl implements DocumentService {
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
 
+    @Value("${app.upload.max-file-size-bytes}")
+    private long maxFileSizeBytes;
+
     @Override
     @Transactional
     public DocumentEntity initiateUpload(MultipartFile file, String title, List<Integer> tags, String description, DocumentVisibility visibility, UUID userId) {
@@ -73,6 +76,13 @@ public class DocumentServiceImpl implements DocumentService {
         List<String> allowedExtensions = List.of("pdf", "docx", "txt", "md");
         if (originalFilename == null || !allowedExtensions.contains(fileExtension)) {
             throw new IllegalArgumentException("Unsupported file format");
+        }
+
+        // 2b. Validate file size against the per-file limit (default 50MB)
+        if (file.getSize() > maxFileSizeBytes) {
+            long limitMb = maxFileSizeBytes / (1024L * 1024L);
+            throw new IllegalArgumentException(
+                    "Uploaded file size exceeds the " + limitMb + "MB limit. Please choose another file");
         }
 
         // 3. Validate storage limit
