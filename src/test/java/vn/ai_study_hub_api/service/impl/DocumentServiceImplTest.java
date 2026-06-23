@@ -26,6 +26,7 @@ import vn.ai_study_hub_api.repository.NotificationRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
+import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
 
 import java.io.File;
@@ -62,6 +63,9 @@ public class DocumentServiceImplTest {
 
     @Mock
     private StoragePlanRepository storagePlanRepository;
+
+    @Mock
+    private ReviewRepository reviewRepository;
 
     @InjectMocks
     private DocumentServiceImpl documentService;
@@ -527,6 +531,7 @@ public class DocumentServiceImplTest {
     void getPreviewAccess_PublicCompleted_GuestSuccess() {
         UUID docId = UUID.randomUUID();
         LocalDateTime testCreatedAt = LocalDateTime.of(2026, 6, 12, 10, 0);
+        TagEntity tag = TagEntity.builder().id(1).label("Math").build();
         DocumentEntity doc = DocumentEntity.builder()
                 .id(docId)
                 .uploader(mockUser)
@@ -538,11 +543,14 @@ public class DocumentServiceImplTest {
                 .visibility(DocumentVisibility.PUBLIC)
                 .createdAt(testCreatedAt)
                 .description("Math test document")
+                .tags(Collections.singletonList(tag))
                 .build();
 
         when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
         when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
                 .thenReturn("https://presigned-url/public.pdf");
+        when(reviewRepository.calculateAverageRating(docId)).thenReturn(4.5);
+        when(reviewRepository.countByDocumentId(docId)).thenReturn(12L);
 
         vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getPreviewAccess(docId, null);
 
@@ -552,8 +560,16 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Math test document", response.getDescription());
+        assertEquals("Test User", response.getUploaderName());
+        assertEquals(4.5, response.getRating());
+        assertEquals(12L, response.getReviewCount());
+        assertEquals(1, response.getTags().size());
+        assertEquals("Math", response.getTags().get(0));
+
         verify(documentRepository, times(1)).findById(docId);
         verify(uploadProvider, times(1)).generatePresignedUrl(doc.getFileUrl());
+        verify(reviewRepository, times(1)).calculateAverageRating(docId);
+        verify(reviewRepository, times(1)).countByDocumentId(docId);
     }
 
     @Test

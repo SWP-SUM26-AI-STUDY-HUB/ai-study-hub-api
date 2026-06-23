@@ -1,6 +1,7 @@
 package vn.ai_study_hub_api.service;
 
 import vn.ai_study_hub_api.controller.response.UserResponse;
+import vn.ai_study_hub_api.controller.response.UserStorageResponse;
 import vn.ai_study_hub_api.model.UserEntity;
 
 import java.util.List;
@@ -13,4 +14,5 @@ public interface UserService {
     UserResponse updateProfile(java.util.UUID userId, vn.ai_study_hub_api.controller.request.UpdateProfileRequest request);
     UserResponse updateAvatar(java.util.UUID userId, org.springframework.web.multipart.MultipartFile avatar);
     UserResponse getMyProfile(java.util.UUID userId);
+    UserStorageResponse getUserStorage(java.util.UUID userId);
 }

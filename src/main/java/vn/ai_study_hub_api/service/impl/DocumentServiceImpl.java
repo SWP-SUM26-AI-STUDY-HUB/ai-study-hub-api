@@ -23,6 +23,7 @@ import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
@@ -47,6 +48,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final UploadProvider uploadProvider;
     private final WebClient webClient;
     private final StoragePlanRepository storagePlanRepository;
+    private final ReviewRepository reviewRepository;
 
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
@@ -643,6 +645,26 @@ public class DocumentServiceImpl implements DocumentService {
 
         String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
 
+        String uploaderName = null;
+        if (document.getUploader() != null) {
+            uploaderName = document.getUploader().getFullName();
+            if (uploaderName == null || uploaderName.trim().isEmpty()) {
+                uploaderName = document.getUploader().getEmail();
+            }
+        }
+
+        Double averageRating = reviewRepository.calculateAverageRating(documentId);
+        double ratingVal = averageRating != null ? Math.round(averageRating * 10.0) / 10.0 : 0.0;
+
+        long reviewCount = reviewRepository.countByDocumentId(documentId);
+
+        List<String> tagsList = java.util.Collections.emptyList();
+        if (document.getTags() != null) {
+            tagsList = document.getTags().stream()
+                    .map(vn.ai_study_hub_api.model.TagEntity::getLabel)
+                    .collect(Collectors.toList());
+        }
+
         return vn.ai_study_hub_api.controller.response.DocumentAccessResponse.builder()
                 .documentId(document.getId())
                 .title(document.getTitle())
@@ -651,6 +673,10 @@ public class DocumentServiceImpl implements DocumentService {
                 .presignedUrl(presignedUrl)
                 .createdAt(document.getCreatedAt())
                 .description(document.getDescription())
+                .uploaderName(uploaderName)
+                .rating(ratingVal)
+                .reviewCount(reviewCount)
+                .tags(tagsList)
                 .build();
     }
 

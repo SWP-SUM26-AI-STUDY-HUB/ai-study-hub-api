@@ -19,7 +19,7 @@ For testing edge cases related to permissions and storage limits:
 
 | Feature / Limit | Free Plan (Default) | Premium Plan |
 | :--- | :--- | :--- |
-| **Max Cloud Storage** | 200 MB | 10 GB |
+| **Max Cloud Storage** | 2 GB | 10 GB |
 | **Daily AI Request Limit** | 15 chats/day | 500 chats/day |
 | **Allowed File Formats** | `.pdf`, `.docx`, `.txt`, `.md` | `.pdf`, `.docx`, `.txt`, `.md` |
 | **Max File Upload Size** | 20 MB | 20 MB |
@@ -356,6 +356,26 @@ For testing edge cases related to permissions and storage limits:
 - **And** The system writes the current timestamp to the document's `deleted_at` field.
 - **And** The system sets the status to `'deleted'`.
 - **And** The system subtracts 20MB from the user's `storage_used` (120MB - 20MB = 100MB) and updates the database record.
+
+---
+
+### 14a. Personal Storage Retrieval (F-DOC-09)
+
+#### Scenario 1: Successfully retrieving personal storage usage details (Happy Path)
+- **Given** The user is authenticated and active.
+- **When** The user requests their storage information.
+- **Then** The system queries the database to retrieve the user's `storage_used` (in bytes) and the matching storage plan limit (converting `storage_limit` from GB to bytes).
+- **And** The system returns the subscription plan ID, subscription plan name, storage limit, and storage used.
+
+#### Scenario 2: Dynamic storage increment upon successful document upload (Happy Path)
+- **Given** The user has a current storage usage of $U$ bytes and a file of size $S$ bytes is uploaded.
+- **When** The document upload and processing completes successfully.
+- **Then** The system increments the user's `storage_used` to $U + S$ bytes in the database.
+
+#### Scenario 3: Dynamic storage decrement upon document deletion (Happy Path)
+- **Given** The user has a current storage usage of $U$ bytes and deletes a document of size $S$ bytes.
+- **When** The document deletion is executed successfully.
+- **Then** The system decrements the user's `storage_used` to $\max(0, U - S)$ bytes in the database.
 
 ---
 
