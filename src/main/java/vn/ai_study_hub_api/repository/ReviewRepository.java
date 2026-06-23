@@ -21,4 +21,6 @@ public interface ReviewRepository extends JpaRepository<ReviewEntity, UUID> {
 
     @Query("SELECT AVG(r.rating) FROM ReviewEntity r WHERE r.document.id = :documentId")
     Double calculateAverageRating(@Param("documentId") UUID documentId);
+
+    long countByDocumentId(UUID documentId);
 }
