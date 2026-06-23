@@ -78,9 +78,9 @@ Bước 6: Cập nhật cộng dồn dung lượng file mới vào trường sto
 
 8. Document Tagging (Gán nhãn tài liệu)
 
-Bước 1: Khi upload hoặc chỉnh sửa tài liệu, User chọn các tag có sẵn hoặc tự gõ nhãn mới (label).
+Bước 1: Khi upload hoặc chỉnh sửa tài liệu, User chọn các tag có sẵn (public hoặc private của riêng họ) hoặc tự gõ nhãn mới (label).
 
-Bước 2: System kiểm tra nhãn mới đã tồn tại trong table tags chưa. Nếu chưa thì tạo mới bản ghi vào table tags.
+Bước 2: System kiểm tra nhãn mới đã tồn tại dưới dạng tag public chưa. Nếu có thì dùng tag public đó. Nếu chưa, tiếp tục kiểm tra xem User đã có tag private nào trùng tên chưa. Nếu chưa có, tạo mới một bản ghi tag private (visibility='private', created_by=user_id) vào table tags.
 
 Bước 3: System ghi nhận các mối quan hệ giữa tài liệu và nhãn vào table document_tags (document_id, tag_id).
 
@@ -120,7 +120,7 @@ Bước 1: User bấm nút "Chia sẻ" trên một tài liệu cá nhân của m
 
 Bước 2: System tự động sinh ra một mã Hash/UUID duy nhất liên kết với file và cập nhật vào trường link_share trong table documents.
 
-Bước 3: Trả về một URL hoàn chỉnh (ví dụ: aistudyhub.com/shared/document-uuid). Người nhận được link này chỉ có quyền xem nội dung (Read-only) dựa theo cấu hình chia sẻ.
+Bước 3: Trả về một URL hoàn chỉnh (ví dụ: aistudyhub.com/shared/document-uuid). Người nhận được link này chỉ có quyền xem nội dung (Read-only) dựa theo cấu hình chia sẻ. Ngoài ra, khi xem tài liệu được chia sẻ, hệ thống sẽ tự động ẩn các tag private của chủ sở hữu và chỉ hiển thị các tag public.
 
 13. Edit Document (Chỉnh sửa thông tin tài liệu)
 

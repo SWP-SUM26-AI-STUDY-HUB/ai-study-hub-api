@@ -52,7 +52,7 @@ Hệ thống bao gồm 4 tác nhân chính:
 ### 3.2. Phân hệ Quản lý Tài liệu (Document Management)
 
 - **F-DOC-01: Upload tài liệu:** Hỗ trợ tải lên các định dạng file phổ biến bao gồm `.pdf`, `.docx`, `.txt`, `.md`. Áp dụng giới hạn dung lượng tối đa trên mỗi file (ví dụ: 20MB) tùy theo cấu hình phân quyền tài khoản.
-- **F-DOC-02: Document Tagging:** Khi tải file lên thì người dùng sẽ chọn các tag có sẵn hoặc là tự tạo ra tag riêng cho mình để hỗ trợ phân loại, quản lí tài liệu.
+- **F-DOC-02: Document Tagging:** Khi tải file lên thì người dùng sẽ chọn các tag có sẵn (public) hoặc là tự tạo ra tag cá nhân (private) riêng cho mình để hỗ trợ phân loại, quản lý tài liệu. Khi Admin tạo tag public mới, hệ thống sẽ tự động map các tag private trùng tên thành tag public đó để chuẩn hóa.
 - **F-DOC-03: Tìm kiếm nâng cao (Advanced Search):** Tích hợp tính năng Full-text Search (Tìm kiếm toàn văn), hỗ trợ truy vấn không chỉ theo tiêu đề file mà còn theo nội dung văn bản bên trong tài liệu.
 - **F-DOC-04: Cấu hình quyền riêng tư:** Người dùng có thể thiết lập trạng thái tài liệu:
     - _Cá nhân (Private):_ Chỉ chủ sở hữu mới có quyền xem và sử dụng để chat với AI.

@@ -252,11 +252,11 @@ For testing edge cases related to permissions and storage limits:
 
 #### Scenario 1: Tagging a document with both existing and new tags (Happy Path)
 - **Given** The user is uploading or editing a document.
-- **When** The user enters the tags `"LinearAlgebra"` (already exists in the database) and `"MidtermExam"` (a new tag, 11 characters).
+- **When** The user enters the tags `"LinearAlgebra"` (already exists as a public tag in the database) and `"MidtermExam"` (a new tag, 11 characters).
 - **And** The user saves the document.
 - **Then** The system checks the database:
-  - Reuses the existing tag ID for `"LinearAlgebra"`.
-  - Creates a new tag definition record for `"MidtermExam"`.
+  - Reuses the existing public tag ID for `"LinearAlgebra"`.
+  - Creates a new private tag definition record (visibility: private) for `"MidtermExam"` owned by the current user.
 - **And** The system writes association records to the `document_tag_mapping` table.
 - **And** The system displays both tags on the document info card.
 
