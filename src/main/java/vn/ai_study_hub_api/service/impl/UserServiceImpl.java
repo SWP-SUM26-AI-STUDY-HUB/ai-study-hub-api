@@ -2,6 +2,8 @@ package vn.ai_study_hub_api.service.impl;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +49,19 @@ public class UserServiceImpl implements UserService {
         return users.stream()
                 .map(this::mapToUserResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserResponse> getUsers(String search, UserRole role, UserStatus status, Pageable pageable) {
+        log.info("Querying users list with search: {}, role: {}, status: {}", search, role, status);
+        Page<UserEntity> usersPage = userRepository.findAllWithFilters(
+                search != null && !search.trim().isEmpty() ? search.trim() : null,
+                role,
+                status,
+                pageable
+        );
+        return usersPage.map(this::mapToUserResponse);
     }
 
     @Override

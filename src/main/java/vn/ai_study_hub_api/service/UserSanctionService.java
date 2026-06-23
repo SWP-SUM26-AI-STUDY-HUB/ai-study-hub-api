@@ -6,4 +6,5 @@ public interface UserSanctionService {
     void banUser(UUID userId);
     void warnUser(UUID userId, String reason);
     void trackUserToken(UUID userId, String token);
+    void reactivateUser(UUID userId);
 }
