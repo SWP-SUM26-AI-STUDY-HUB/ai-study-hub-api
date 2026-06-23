@@ -6,6 +6,13 @@ spring:
     name: ai-study-hub-api
   profiles:
     active: @spring.profiles.active@
+  servlet:
+    multipart:
+      # Multipart ceiling intentionally sits above the 50MB business rule
+      # (app.upload.max-file-size-bytes) so the upload-module size check governs
+      # the limit and returns a clean 400 instead of a generic 500.
+      max-file-size: 60MB
+      max-request-size: 60MB
   security:
     oauth2:
       client:
@@ -65,9 +72,15 @@ aws:
 
 fastapi:
   rag-process-url: ${FASTAPI_RAG_PROCESS_URL:http://localhost:8000/api/v1/rag/process}
+  rag-chat-url: ${FASTAPI_RAG_CHAT_URL:http://localhost:8000/api/v1/chat}
+  chat-timeout-seconds: ${FASTAPI_CHAT_TIMEOUT_SECONDS:30}
 
 app:
   share-url-prefix: ${SHARE_URL_PREFIX:http://localhost:8080/api/v1/documents/shared/}
+  upload:
+    # Per-file size cap enforced in DocumentServiceImpl.initiateUpload.
+    # Keep spring.servlet.multipart.max-file-size >= this value.
+    max-file-size-bytes: ${APP_UPLOAD_MAX_FILE_SIZE:52428800} # 50MB
   jwt:
     secret: ${JWT_SECRET:9a4f2c8d3e7b1a5c6d8e0f9b8c7a6d5e4f3c2b1a0d9e8f7a6b5c4d3e2f1a0b9c}
     access-expiration-ms: 3600000

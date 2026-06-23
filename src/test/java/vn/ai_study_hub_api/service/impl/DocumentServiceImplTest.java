@@ -83,6 +83,7 @@ public class DocumentServiceImplTest {
 
         // Inject the Value annotation values since MockitoExtension won't inject them
         org.springframework.test.util.ReflectionTestUtils.setField(documentService, "fastApiUrl", "http://localhost:8000/api");
+        org.springframework.test.util.ReflectionTestUtils.setField(documentService, "maxFileSizeBytes", 52428800L);
 
         mockUser = UserEntity.builder()
                 .id(userId)
@@ -419,6 +420,21 @@ public class DocumentServiceImplTest {
                 documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void initiateUpload_FileSizeExceeded() {
+        org.springframework.web.multipart.MultipartFile file = mock(org.springframework.web.multipart.MultipartFile.class);
+        when(file.getOriginalFilename()).thenReturn("big.pdf");
+        when(file.getSize()).thenReturn(52428801L); // 50MB + 1 byte
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+                documentService.initiateUpload(file, "Big Doc", List.of(1), null, DocumentVisibility.PRIVATE, userId)
+        );
+        assertEquals("Uploaded file size exceeds the 50MB limit. Please choose another file", exception.getMessage());
         verify(documentRepository, never()).save(any());
     }
 
@@ -1095,6 +1111,68 @@ public class DocumentServiceImplTest {
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void updateDocument_Success_Private() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Old Title")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .tags(new java.util.ArrayList<>())
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setTitle("New Title");
+        request.setDescription("New Description");
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+        when(documentRepository.save(any(DocumentEntity.class))).thenReturn(doc);
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.updateDocument(docId, request, userId);
+
+        assertNotNull(response);
+        assertEquals("New Title", response.getTitle());
+        assertEquals("New Description", response.getDescription());
+        assertEquals("PRIVATE", response.getVisibility());
+        verify(documentRepository, times(1)).save(doc);
+    }
+
+    @Test
+    void updateDocument_Forbidden_Public() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setTitle("New Title");
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.updateDocument(docId, request, userId)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals("Cannot edit public documents", exception.getMessage());
         verify(documentRepository, never()).save(any());
     }
 }

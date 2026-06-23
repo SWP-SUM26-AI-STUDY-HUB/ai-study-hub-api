@@ -19,6 +19,9 @@ import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.ViolationHistoryRepository;
 import vn.ai_study_hub_api.service.ReportService;
+import vn.ai_study_hub_api.controller.response.ReportedDocumentResponse;
+import vn.ai_study_hub_api.controller.response.ReportDetailResponse;
+import vn.ai_study_hub_api.model.ReportStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -167,5 +170,35 @@ public class ReportServiceImpl implements ReportService {
 
         report.setStatus(vn.ai_study_hub_api.model.ReportStatus.REJECTED);
         reportRepository.save(report);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ReportedDocumentResponse> getReportedDocuments() {
+        return reportRepository.findReportedDocumentsSummary(ReportStatus.PENDING);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ReportDetailResponse> getReportDetailsForDocument(UUID documentId) {
+        if (!documentRepository.existsById(documentId)) {
+            throw new AppException(HttpStatus.NOT_FOUND, "The document you are looking for does not exist.");
+        }
+
+        List<ReportEntity> reports = reportRepository.findReportsByDocumentIdAndStatus(documentId, ReportStatus.PENDING);
+        return reports.stream()
+                .map(r -> {
+                    String reporterName = r.getReporter() != null ? r.getReporter().getFullName() : null;
+                    if (reporterName == null || reporterName.isBlank()) {
+                        reporterName = r.getReporter() != null ? r.getReporter().getEmail() : "Anonymous";
+                    }
+                    return ReportDetailResponse.builder()
+                            .reportId(r.getId())
+                            .reporterName(reporterName)
+                            .reason(r.getReason())
+                            .createdAt(r.getCreatedAt())
+                            .build();
+                })
+                .collect(java.util.stream.Collectors.toList());
     }
 }

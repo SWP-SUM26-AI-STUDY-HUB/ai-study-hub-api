@@ -55,8 +55,8 @@ This document contains the refined, unambiguous, and measurable Software Require
 - **F-DOC-01.6:** The system shall increment the user's database field `storage_used` by the exact file size in bytes.
 
 ### 8. Document Tagging (F-DOC-02)
-- **F-DOC-02.1:** The system shall allow users to attach existing tags or create new tags (up to 30 characters each) during document upload or profile edit flows.
-- **F-DOC-02.2:** The system shall query if the tag text exists in the database and create a new record in the tag definition table if it does not.
+- **F-DOC-02.1:** The system shall allow users to attach existing public tags, their own private tags, or create new private tags (up to 30 characters each) during document upload or profile edit flows.
+- **F-DOC-02.2:** The system shall query if the tag text exists as a public tag or the user's private tag. If it does not, it shall create a new private tag record associated with the user. If an Admin creates a new public tag, any matching user private tags shall be automatically merged.
 - **F-DOC-02.3:** The system shall write association records to the document-tag mapping database table.
 
 ### 9. Personal Storage Access (F-DOC-03)

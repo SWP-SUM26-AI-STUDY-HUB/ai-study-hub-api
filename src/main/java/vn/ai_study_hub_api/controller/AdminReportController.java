@@ -7,7 +7,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.service.ReportService;
+import vn.ai_study_hub_api.controller.response.ReportedDocumentResponse;
+import vn.ai_study_hub_api.controller.response.ReportDetailResponse;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,5 +39,21 @@ public class AdminReportController {
     public ApiResponse<Void> rejectReport(@PathVariable UUID reportId) {
         reportService.rejectReport(reportId);
         return ApiResponse.success(null, "Report rejected successfully. The document remains active.");
+    }
+
+    @GetMapping("/documents")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get all reported documents", description = "Retrieves a list of all documents with pending reports, sorted by the report count in descending order.")
+    public ApiResponse<List<ReportedDocumentResponse>> getReportedDocuments() {
+        List<ReportedDocumentResponse> reportedDocs = reportService.getReportedDocuments();
+        return ApiResponse.success(reportedDocs, "Reported documents retrieved successfully.");
+    }
+
+    @GetMapping("/documents/{documentId}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get report details for a specific document", description = "Retrieves all pending reports details for a specific document.")
+    public ApiResponse<List<ReportDetailResponse>> getReportDetails(@PathVariable UUID documentId) {
+        List<ReportDetailResponse> reportDetails = reportService.getReportDetailsForDocument(documentId);
+        return ApiResponse.success(reportDetails, "Report details retrieved successfully.");
     }
 }
