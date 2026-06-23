@@ -460,6 +460,10 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
         }
 
+        if (DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Cannot edit public documents");
+        }
+
         if (request.getTitle() != null && !request.getTitle().trim().isEmpty()) {
             document.setTitle(request.getTitle().trim());
         }

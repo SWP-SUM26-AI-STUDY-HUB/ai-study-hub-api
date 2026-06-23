@@ -1113,5 +1113,67 @@ public class DocumentServiceImplTest {
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
         verify(documentRepository, never()).save(any());
     }
+
+    @Test
+    void updateDocument_Success_Private() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Old Title")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .tags(new java.util.ArrayList<>())
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setTitle("New Title");
+        request.setDescription("New Description");
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+        when(documentRepository.save(any(DocumentEntity.class))).thenReturn(doc);
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.updateDocument(docId, request, userId);
+
+        assertNotNull(response);
+        assertEquals("New Title", response.getTitle());
+        assertEquals("New Description", response.getDescription());
+        assertEquals("PRIVATE", response.getVisibility());
+        verify(documentRepository, times(1)).save(doc);
+    }
+
+    @Test
+    void updateDocument_Forbidden_Public() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setTitle("New Title");
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.updateDocument(docId, request, userId)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals("Cannot edit public documents", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
 }
 
