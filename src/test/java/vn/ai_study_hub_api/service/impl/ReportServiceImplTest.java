@@ -9,6 +9,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import vn.ai_study_hub_api.controller.request.ReportRequest;
 import vn.ai_study_hub_api.controller.response.ReportResponse;
+import vn.ai_study_hub_api.controller.response.ReportedDocumentResponse;
+import vn.ai_study_hub_api.controller.response.ReportDetailResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.*;
 import vn.ai_study_hub_api.repository.DocumentRepository;
@@ -215,5 +217,65 @@ public class ReportServiceImplTest {
         verify(reportRepository, times(1)).save(pendingReport);
         verify(documentRepository, never()).save(any());
         verify(violationHistoryRepository, never()).save(any());
+    }
+
+    @Test
+    void getReportedDocuments_Success() {
+        ReportedDocumentResponse mockSummary = ReportedDocumentResponse.builder()
+                .documentId(documentId)
+                .title("test.pdf")
+                .uploaderName("Test User")
+                .reportCount(5L)
+                .latestReportAt(java.time.LocalDateTime.now())
+                .build();
+
+        when(reportRepository.findReportedDocumentsSummary(ReportStatus.PENDING)).thenReturn(List.of(mockSummary));
+
+        List<ReportedDocumentResponse> result = reportService.getReportedDocuments();
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(documentId, result.get(0).getDocumentId());
+        assertEquals("test.pdf", result.get(0).getTitle());
+        assertEquals(5L, result.get(0).getReportCount());
+        verify(reportRepository, times(1)).findReportedDocumentsSummary(ReportStatus.PENDING);
+    }
+
+    @Test
+    void getReportDetailsForDocument_Success() {
+        ReportEntity mockReport = ReportEntity.builder()
+                .id(UUID.randomUUID())
+                .reporter(mockUser)
+                .document(mockDocument)
+                .reason("Test reason")
+                .status(ReportStatus.PENDING)
+                .createdAt(java.time.LocalDateTime.now())
+                .build();
+
+        when(documentRepository.existsById(documentId)).thenReturn(true);
+        when(reportRepository.findReportsByDocumentIdAndStatus(documentId, ReportStatus.PENDING)).thenReturn(List.of(mockReport));
+
+        List<ReportDetailResponse> result = reportService.getReportDetailsForDocument(documentId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(mockReport.getId(), result.get(0).getReportId());
+        assertEquals("Test User", result.get(0).getReporterName());
+        assertEquals("Test reason", result.get(0).getReason());
+        verify(documentRepository, times(1)).existsById(documentId);
+        verify(reportRepository, times(1)).findReportsByDocumentIdAndStatus(documentId, ReportStatus.PENDING);
+    }
+
+    @Test
+    void getReportDetailsForDocument_DocumentNotFound() {
+        when(documentRepository.existsById(documentId)).thenReturn(false);
+
+        AppException exception = assertThrows(AppException.class, () ->
+                reportService.getReportDetailsForDocument(documentId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("The document you are looking for does not exist.", exception.getMessage());
+        verify(reportRepository, never()).findReportsByDocumentIdAndStatus(any(), any());
     }
 }
