@@ -92,3 +92,9 @@ app:
     max-pool-size: 20
     queue-capacity: 100
     thread-name-prefix: doc-async-
+
+vnpay:
+  tmn-code: ${VNPAY_TMN_CODE}
+  hash-secret: ${VNPAY_HASH_SECRET}
+  pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+  return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/v1/payments/vnpay-callback}
