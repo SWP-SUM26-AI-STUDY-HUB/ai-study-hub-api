@@ -35,4 +35,33 @@ public class VNPayUtil {
         }
         return ipAddress;
     }
+
+    public static boolean verifyIpnChecksum(java.util.Map<String, String> fields, String hashSecret) {
+        String vnp_SecureHash = fields.get("vnp_SecureHash");
+        if (vnp_SecureHash == null || vnp_SecureHash.isEmpty()) {
+            return false;
+        }
+        java.util.Map<String, String> params = new java.util.HashMap<>(fields);
+        params.remove("vnp_SecureHash");
+        params.remove("vnp_SecureHashType");
+
+        java.util.List<String> fieldNames = new java.util.ArrayList<>(params.keySet());
+        java.util.Collections.sort(fieldNames);
+        StringBuilder hashData = new StringBuilder();
+        java.util.Iterator<String> itr = fieldNames.iterator();
+        while (itr.hasNext()) {
+            String fieldName = itr.next();
+            String fieldValue = params.get(fieldName);
+            if ((fieldValue != null) && (fieldValue.length() > 0)) {
+                hashData.append(fieldName);
+                hashData.append('=');
+                hashData.append(java.net.URLEncoder.encode(fieldValue, java.nio.charset.StandardCharsets.US_ASCII));
+                if (itr.hasNext()) {
+                    hashData.append('&');
+                }
+            }
+        }
+        String calculatedHash = hmacSHA512(hashSecret, hashData.toString());
+        return calculatedHash.equalsIgnoreCase(vnp_SecureHash);
+    }
 }

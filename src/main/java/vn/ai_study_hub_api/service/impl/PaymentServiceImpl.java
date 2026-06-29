@@ -12,8 +12,11 @@ import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.InvoiceEntity;
 import vn.ai_study_hub_api.model.InvoiceStatus;
 import vn.ai_study_hub_api.model.StoragePlanEntity;
+import vn.ai_study_hub_api.model.UserEntity;
+import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.InvoiceRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
+import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.PaymentService;
 
 import java.net.URLEncoder;
@@ -28,6 +31,7 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final StoragePlanRepository storagePlanRepository;
     private final InvoiceRepository invoiceRepository;
+    private final UserRepository userRepository;
 
     @Value("${vnpay.tmn-code}")
     private String tmnCode;
@@ -127,5 +131,110 @@ public class PaymentServiceImpl implements PaymentService {
         String finalPaymentUrl = payUrl + "?" + queryUrl;
         log.info("Successfully generated VNPAY URL: {}", finalPaymentUrl);
         return finalPaymentUrl;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, String> processVnpayIpn(Map<String, String> queryParams) {
+        log.info("Received VNPAY IPN callback with params: {}", queryParams);
+        Map<String, String> response = new HashMap<>();
+
+        // 1. Kiểm tra chữ ký checksum
+        boolean isValidChecksum = VNPayUtil.verifyIpnChecksum(queryParams, hashSecret);
+        if (!isValidChecksum) {
+            log.warn("Invalid VNPAY IPN checksum");
+            response.put("RspCode", "97");
+            response.put("Message", "Invalid Checksum");
+            return response;
+        }
+
+        String vnp_TxnRef = queryParams.get("vnp_TxnRef");
+        String vnp_AmountStr = queryParams.get("vnp_Amount");
+        String vnp_ResponseCode = queryParams.get("vnp_ResponseCode");
+        String vnp_TransactionNo = queryParams.get("vnp_TransactionNo");
+
+        // 2. Tìm kiếm Hóa đơn trong DB
+        UUID invoiceId;
+        try {
+            invoiceId = UUID.fromString(vnp_TxnRef);
+        } catch (Exception e) {
+            log.warn("Invalid invoice ID format: {}", vnp_TxnRef);
+            response.put("RspCode", "01");
+            response.put("Message", "Order not found");
+            return response;
+        }
+
+        Optional<InvoiceEntity> invoiceOpt = invoiceRepository.findById(invoiceId);
+        if (invoiceOpt.isEmpty()) {
+            log.warn("Invoice not found with ID: {}", invoiceId);
+            response.put("RspCode", "01");
+            response.put("Message", "Order not found");
+            return response;
+        }
+
+        InvoiceEntity invoice = invoiceOpt.get();
+
+        // 3. Kiểm tra số tiền hợp lệ (VNPay gửi amount * 100)
+        if (vnp_AmountStr != null) {
+            try {
+                long vnpAmount = Long.parseLong(vnp_AmountStr);
+                long expectedAmount = invoice.getAmount().longValue() * 100;
+                if (vnpAmount != expectedAmount) {
+                    log.warn("Invalid amount for invoice {}: expected {}, got {}", invoiceId, expectedAmount, vnpAmount);
+                    response.put("RspCode", "04");
+                    response.put("Message", "Invalid amount");
+                    return response;
+                }
+            } catch (NumberFormatException e) {
+                log.warn("Invalid amount format in VNPAY IPN: {}", vnp_AmountStr);
+                response.put("RspCode", "04");
+                response.put("Message", "Invalid amount");
+                return response;
+            }
+        }
+
+        // 4. Kiểm tra trạng thái hóa đơn (tránh xử lý trùng lặp - Idempotency)
+        if (invoice.getStatus() != InvoiceStatus.PENDING) {
+            log.info("Invoice {} already confirmed with status: {}", invoiceId, invoice.getStatus());
+            response.put("RspCode", "02");
+            response.put("Message", "Order already confirmed");
+            return response;
+        }
+
+        // 5. Cập nhật giao dịch và tài khoản người dùng
+        if ("00".equals(vnp_ResponseCode)) {
+            invoice.setStatus(InvoiceStatus.SUCCESS);
+            invoice.setTransactionId(vnp_TransactionNo);
+            invoiceRepository.save(invoice);
+
+            UserEntity user = userRepository.findById(invoice.getUserId())
+                    .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
+
+            user.setPlanId(invoice.getPlanId());
+
+            java.time.LocalDateTime now = java.time.LocalDateTime.now();
+            int duration = invoice.getDurationDays() != null ? invoice.getDurationDays() : 30;
+            if (user.getPlanExpiresAt() != null && user.getPlanExpiresAt().isAfter(now)) {
+                user.setPlanExpiresAt(user.getPlanExpiresAt().plusDays(duration));
+            } else {
+                user.setPlanExpiresAt(now.plusDays(duration));
+            }
+
+            if (user.getStatus() == UserStatus.OVERLIMITSTORAGE) {
+                user.setStatus(UserStatus.ACTIVE);
+            }
+
+            userRepository.save(user);
+            log.info("Successfully updated invoice {} and upgraded user {} to plan {}", invoiceId, user.getId(), invoice.getPlanId());
+        } else {
+            invoice.setStatus(InvoiceStatus.FAILED);
+            invoice.setTransactionId(vnp_TransactionNo);
+            invoiceRepository.save(invoice);
+            log.info("Invoice {} payment failed with response code {}", invoiceId, vnp_ResponseCode);
+        }
+
+        response.put("RspCode", "00");
+        response.put("Message", "Confirm Success");
+        return response;
     }
 }
