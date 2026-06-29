@@ -27,6 +27,19 @@ public interface TagRepository extends JpaRepository<TagEntity, Integer> {
     @Query("SELECT t FROM TagEntity t WHERE LOWER(t.label) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
            "AND (t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC OR t.visibility IS NULL)")
     List<TagEntity> searchPublicTags(@Param("keyword") String keyword);
+
+    @Query("SELECT t FROM TagEntity t WHERE LOWER(t.label) = LOWER(:label) AND t.visibility = :visibility")
+    List<TagEntity> findAllByLabelIgnoreCaseAndVisibility(@Param("label") String label, @Param("visibility") TagVisibility visibility);
+
+    @Modifying
+    @Query(value = "INSERT INTO document_tags (document_id, tag_id) " +
+                   "SELECT document_id, :newTagId FROM document_tags WHERE tag_id IN :oldTagIds " +
+                   "ON CONFLICT (document_id, tag_id) DO NOTHING", nativeQuery = true)
+    void reassignDocumentTags(@Param("oldTagIds") List<Integer> oldTagIds, @Param("newTagId") Integer newTagId);
+
+    @Modifying
+    @Query(value = "DELETE FROM document_tags WHERE tag_id IN :oldTagIds", nativeQuery = true)
+    void deleteDocumentTagsByTagIds(@Param("oldTagIds") List<Integer> oldTagIds);
 }
 
 

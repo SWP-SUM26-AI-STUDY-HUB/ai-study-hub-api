@@ -8,5 +8,6 @@ import java.util.UUID;
 public interface TagService {
     List<TagResponse> searchTags(String keyword, UUID userId);
     List<TagResponse> createUserTags(List<String> tags, UUID userId);
+    TagResponse createPublicTag(AdminCreateTagRequest request);
 }
 
