@@ -40,4 +40,16 @@ public class PaymentController {
                 .paymentUrl(paymentUrl)
                 .build());
     }
+
+    @GetMapping("/vnpay-ipn")
+    public ResponseEntity<java.util.Map<String, String>> vnpayIpn(@RequestParam java.util.Map<String, String> queryParams) {
+        java.util.Map<String, String> response = paymentService.processVnpayIpn(queryParams);
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/vnpay-callback")
+    public ResponseEntity<java.util.Map<String, String>> vnpayCallback(@RequestParam java.util.Map<String, String> queryParams) {
+        java.util.Map<String, String> response = paymentService.processVnpayIpn(queryParams);
+        return ResponseEntity.ok(response);
+    }
 }
