@@ -81,6 +81,8 @@ public class SecurityConfig {
                                 "/api/v1/documents/*/preview",
                                 "/api/v1/internal/**",
                                 "/api/v1/documents/shared/**",
+                                "/api/v1/payments/vnpay-ipn",
+                                "/api/v1/payments/vnpay-callback",
                                 "/api/internal/**",
                                 "/login/oauth2/**",
                                 "/swagger-ui/**",

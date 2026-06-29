@@ -71,6 +71,7 @@ aws:
     endpoint: ${AWS_S3_ENDPOINT:}
 
 fastapi:
+  base-url: ${FASTAPI_BASE_URL:http://localhost:8000/api/v1/rag}
   rag-process-url: ${FASTAPI_RAG_PROCESS_URL:http://localhost:8000/api/v1/rag/process}
   rag-chat-url: ${FASTAPI_RAG_CHAT_URL:http://localhost:8000/api/v1/chat}
   chat-timeout-seconds: ${FASTAPI_CHAT_TIMEOUT_SECONDS:30}
@@ -92,3 +93,9 @@ app:
     max-pool-size: 20
     queue-capacity: 100
     thread-name-prefix: doc-async-
+
+vnpay:
+  tmn-code: ${VNPAY_TMN_CODE}
+  hash-secret: ${VNPAY_HASH_SECRET}
+  pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+  return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/v1/payments/vnpay-callback}
