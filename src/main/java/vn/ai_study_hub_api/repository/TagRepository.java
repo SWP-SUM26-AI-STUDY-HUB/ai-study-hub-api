@@ -10,21 +10,24 @@ import vn.ai_study_hub_api.model.TagVisibility;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface TagRepository extends JpaRepository<TagEntity, Integer> {
     Optional<TagEntity> findByLabel(String label);
     Optional<TagEntity> findByLabelIgnoreCaseAndVisibility(String label, TagVisibility visibility);
-    List<TagEntity> findAllByLabelIgnoreCaseAndVisibility(String label, TagVisibility visibility);
+    Optional<TagEntity> findByLabelIgnoreCaseAndVisibilityAndCreatedBy_Id(String label, TagVisibility visibility, UUID createdById);
     List<TagEntity> findByLabelContainingIgnoreCase(String label);
 
-    @Modifying
-    @Query(value = "UPDATE document_tags SET tag_id = :newTagId WHERE tag_id = :oldTagId AND document_id NOT IN (SELECT document_id FROM document_tags WHERE tag_id = :newTagId)", nativeQuery = true)
-    void reassignDocumentTags(@Param("oldTagId") Integer oldTagId, @Param("newTagId") Integer newTagId);
+    @Query("SELECT t FROM TagEntity t WHERE LOWER(t.label) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+           "AND (t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC OR t.visibility IS NULL " +
+           "     OR (t.visibility = vn.ai_study_hub_api.model.TagVisibility.PRIVATE AND t.createdBy.id = :userId))")
+    List<TagEntity> searchTagsForUser(@Param("keyword") String keyword, @Param("userId") UUID userId);
 
-    @Modifying
-    @Query(value = "DELETE FROM document_tags WHERE tag_id = :oldTagId", nativeQuery = true)
-    void deleteDocumentTagsByTagId(@Param("oldTagId") Integer oldTagId);
+    @Query("SELECT t FROM TagEntity t WHERE LOWER(t.label) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
+           "AND (t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC OR t.visibility IS NULL)")
+    List<TagEntity> searchPublicTags(@Param("keyword") String keyword);
 }
+
 
 
