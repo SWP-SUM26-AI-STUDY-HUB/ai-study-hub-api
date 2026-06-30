@@ -76,9 +76,8 @@ public class TagServiceImpl implements TagService {
                 throw new AppException(HttpStatus.BAD_REQUEST, "Tag length cannot exceed 30 characters");
             }
 
-            // 1. kiểm tra có tồn tại tag public không
-            TagEntity tagEntity = tagRepository.findByLabelIgnoreCaseAndVisibility(trimmedTag, TagVisibility.PUBLIC)
-                    .orElseGet(() -> tagRepository.findByLabel(trimmedTag).orElse(null));
+            // 1. kiểm tra có tồn tại tag public hoặc legacy tag không
+            TagEntity tagEntity = tagRepository.findPublicOrLegacyTag(trimmedTag).orElse(null);
 
             // 2. kiểm tra tag private của người đó có tồn tại không
             if (tagEntity == null) {

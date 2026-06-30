@@ -13,6 +13,10 @@ import vn.ai_study_hub_api.repository.TrendingDocumentRepository;
 import vn.ai_study_hub_api.repository.projection.TrendingStatsProjection;
 import vn.ai_study_hub_api.service.TrendingDocumentService;
 
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import vn.ai_study_hub_api.security.CustomUserDetails;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -21,6 +25,16 @@ import java.util.stream.Collectors;
 public class TrendingDocumentServiceImpl implements TrendingDocumentService {
 
     private final TrendingDocumentRepository trendingDocumentRepository;
+
+    private UUID getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            return ((CustomUserDetails) authentication.getPrincipal()).getId();
+        }
+        return null;
+    }
 
     @Override
     public Page<TrendingDocumentResponse> getTrendingDocuments(Pageable pageable) {
@@ -52,11 +66,18 @@ public class TrendingDocumentServiceImpl implements TrendingDocumentService {
 
             List<TagResponse> tagResponses = Collections.emptyList();
             if (doc.getTags() != null) {
-                tagResponses = doc.getTags().stream().map(tag -> TagResponse.builder()
-                        .id(tag.getId())
-                        .label(tag.getLabel())
-                        .build()
-                ).collect(Collectors.toList());
+                UUID currentUserId = getCurrentUserId();
+                boolean isOwner = doc.getUploader() != null && doc.getUploader().getId().equals(currentUserId);
+                tagResponses = doc.getTags().stream()
+                        .filter(t -> isOwner 
+                                || t.getVisibility() == null 
+                                || vn.ai_study_hub_api.model.TagVisibility.PUBLIC.equals(t.getVisibility()))
+                        .map(tag -> TagResponse.builder()
+                                .id(tag.getId())
+                                .label(tag.getLabel())
+                                .visibility(tag.getVisibility() != null ? tag.getVisibility() : vn.ai_study_hub_api.model.TagVisibility.PUBLIC)
+                                .build()
+                        ).collect(Collectors.toList());
             }
 
             return TrendingDocumentResponse.builder()
