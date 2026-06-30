@@ -68,9 +68,9 @@ public class TagServiceImplTest {
         TagEntity mathEntity = TagEntity.builder().id(1).label("Math").build();
 
         when(userRepository.getReferenceById(userId)).thenReturn(mockUser);
-        when(tagRepository.findByLabelIgnoreCaseAndVisibility("Math", vn.ai_study_hub_api.model.TagVisibility.PUBLIC))
+        when(tagRepository.findPublicOrLegacyTag("Math"))
                 .thenReturn(java.util.Optional.of(mathEntity));
-        when(tagRepository.findByLabelIgnoreCaseAndVisibility("Physics", vn.ai_study_hub_api.model.TagVisibility.PUBLIC))
+        when(tagRepository.findPublicOrLegacyTag("Physics"))
                 .thenReturn(java.util.Optional.empty());
         when(tagRepository.findByLabelIgnoreCaseAndVisibilityAndCreatedBy_Id("Physics", vn.ai_study_hub_api.model.TagVisibility.PRIVATE, userId))
                 .thenReturn(java.util.Optional.empty());
