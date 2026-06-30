@@ -106,5 +106,44 @@ public class TagServiceImpl implements TagService {
                 .collect(Collectors.toList());
     }
 
-}
+    @Override
+    @Transactional
+    public TagResponse createPublicTag(AdminCreateTagRequest request) {
+        log.info("Creating public tag with label: '{}'", request.getLabel());
+        String trimmedLabel = request.getLabel().trim();
 
+        // 1. Check if public tag already exists
+        TagEntity publicTag = tagRepository.findByLabelIgnoreCaseAndVisibility(trimmedLabel, TagVisibility.PUBLIC)
+                .orElse(null);
+
+        if (publicTag == null) {
+            // Create new public tag
+            publicTag = tagRepository.save(TagEntity.builder()
+                    .label(trimmedLabel)
+                    .visibility(TagVisibility.PUBLIC)
+                    .build());
+        }
+
+        // 2. Find all private tags with matching label
+        List<TagEntity> privateTags = tagRepository.findAllByLabelIgnoreCaseAndVisibility(trimmedLabel, TagVisibility.PRIVATE);
+
+        if (!privateTags.isEmpty()) {
+            List<Integer> privateTagIds = privateTags.stream().map(TagEntity::getId).collect(Collectors.toList());
+
+            // 3. Reassign document_tags to the public tag
+            tagRepository.reassignDocumentTags(privateTagIds, publicTag.getId());
+
+            // 4. Delete old document_tags references
+            tagRepository.deleteDocumentTagsByTagIds(privateTagIds);
+
+            // 5. Delete private tags
+            tagRepository.deleteAllByIdInBatch(privateTagIds);
+        }
+
+        return TagResponse.builder()
+                .id(publicTag.getId())
+                .label(publicTag.getLabel())
+                .visibility(publicTag.getVisibility() != null ? publicTag.getVisibility() : TagVisibility.PUBLIC)
+                .build();
+    }
+}
