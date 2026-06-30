@@ -265,6 +265,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void handleFastApiCallback_Success_Private() {
+        mockDocument.setStatus(DocumentStatus.PROCESSING);
         mockDocument.setVisibility(DocumentVisibility.PRIVATE);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.save(any(DocumentEntity.class))).thenReturn(mockDocument);
@@ -280,6 +281,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void handleFastApiCallback_Success_Public() {
+        mockDocument.setStatus(DocumentStatus.PROCESSING);
         mockDocument.setVisibility(DocumentVisibility.PUBLIC);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.save(any(DocumentEntity.class))).thenReturn(mockDocument);
@@ -295,6 +297,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void handleFastApiCallback_Failed() {
+        mockDocument.setStatus(DocumentStatus.PROCESSING);
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.save(any(DocumentEntity.class))).thenReturn(mockDocument);
 
@@ -1028,7 +1031,6 @@ public class DocumentServiceImplTest {
         mockDocument.setVisibility(DocumentVisibility.PUBLIC);
         when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
-        when(uploadProvider.generatePresignedUrl(anyString())).thenReturn("https://presigned.url/mock.pdf");
 
         // Mock WebClient call
         WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
@@ -1037,6 +1039,7 @@ public class DocumentServiceImplTest {
         WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
 
         when(webClient.post()).thenReturn(requestBodyUriSpec);
+        when(webClient.patch()).thenReturn(requestBodyUriSpec);
         when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
         when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
         when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
@@ -1045,7 +1048,7 @@ public class DocumentServiceImplTest {
 
         documentService.approveDocument(documentId);
 
-        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatus());
+        assertEquals(DocumentStatus.PROCESSING, mockDocument.getStatus());
         verify(documentRepository, times(1)).save(mockDocument);
         verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
     }

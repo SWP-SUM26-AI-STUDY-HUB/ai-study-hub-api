@@ -56,6 +56,9 @@ public class DocumentServiceImpl implements DocumentService {
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
 
+    @Value("${fastapi.base-url}")
+    private String fastApiBaseUrl;
+
     @Value("${app.upload.max-file-size-bytes}")
     private long maxFileSizeBytes;
 
@@ -195,13 +198,31 @@ public class DocumentServiceImpl implements DocumentService {
             }
 
             if (DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
-                // Public status -> auto switch to pending status
+                // Public -> PENDING (await moderation + approval). Chunks are extracted
+                // NOW (embedding deferred) so the moderation service has content to review
+                // via GET /api/v1/rag/documents/{id}/chunks while the doc sits in PENDING.
                 document.setStatus(DocumentStatus.PENDING);
                 documentRepository.save(document);
                 log.info("Document ID {} is public. Status updated to PENDING.", documentId);
- 
-                // Insert a notification for all admin users
+
                 createPendingApprovalNotifications(document);
+
+                // Trigger extraction only (no embedding). RAG callback EXTRACTED keeps
+                // the doc in PENDING; embedding/indexing runs after approval.
+                String presignedUrl = uploadProvider.generatePresignedUrl(storagePath);
+                Map<String, String> extractPayload = Map.of(
+                        "document_id", documentId.toString(),
+                        "file_url", presignedUrl
+                );
+                webClient.post()
+                        .uri(fastApiBaseUrl + "/extract")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(extractPayload)
+                        .retrieve()
+                        .toBodilessEntity()
+                        .timeout(java.time.Duration.ofSeconds(10))
+                        .block();
+                log.info("RAG extraction triggered for public document ID: {}", documentId);
             } else {
                 // Private status -> auto switch to processing status (normal flow)
                 document.setStatus(DocumentStatus.PROCESSING);
@@ -275,19 +296,31 @@ public class DocumentServiceImpl implements DocumentService {
                 .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
 
         if ("SUCCESS".equalsIgnoreCase(status)) {
-            document.setSummary(summary);
+            // /process (private) or /index (approved public) finished embedding.
+            if (summary != null && !summary.trim().isEmpty()) {
+                document.setSummary(summary);
+            }
             if (DocumentStatus.PROCESSING.equals(document.getStatus())) {
                 document.setStatus(DocumentStatus.COMPLETED);
-                log.info("FastAPI succeeded. Document {} updated to COMPLETED with summary.", documentId);
+                log.info("RAG SUCCESS. Document {} -> COMPLETED.", documentId);
             } else {
-                log.info("FastAPI succeeded. Document {} summary updated, but status remains {} (not PROCESSING).", documentId, document.getStatus());
+                log.info("RAG SUCCESS. Document {} status remains {} (not PROCESSING).", documentId, document.getStatus());
             }
+        } else if ("EXTRACTED".equalsIgnoreCase(status)) {
+            // Public doc extracted (chunks available for moderation), NOT yet embedded.
+            // Store the summary; status stays PENDING (awaiting moderation + approval).
+            if (summary != null && !summary.trim().isEmpty()) {
+                document.setSummary(summary);
+            }
+            log.info("RAG EXTRACTED. Document {} chunks ready for moderation; status remains {}.", documentId, document.getStatus());
         } else {
-            if (DocumentStatus.PROCESSING.equals(document.getStatus())) {
+            // FAILED (or unknown). A PENDING public doc whose extraction failed also goes FAILED.
+            if (DocumentStatus.PROCESSING.equals(document.getStatus())
+                    || DocumentStatus.PENDING.equals(document.getStatus())) {
                 document.setStatus(DocumentStatus.FAILED);
-                log.warn("FastAPI failed. Document {} status updated to FAILED.", documentId);
+                log.warn("RAG FAILED. Document {} -> FAILED.", documentId);
             } else {
-                log.warn("FastAPI failed. Document {} status remains {} (not PROCESSING).", documentId, document.getStatus());
+                log.warn("RAG FAILED. Document {} status remains {}.", documentId, document.getStatus());
             }
         }
 
@@ -545,11 +578,13 @@ public class DocumentServiceImpl implements DocumentService {
         documentRepository.save(document);
 
         if (needsRagProcessing) {
+            // PUBLIC -> PRIVATE on a never-indexed doc: index it as private now.
             triggerFastApiAsync(documentId);
-        } else if (visibilityChanged) {
-            // Chỉ cập nhật metadata nếu tài liệu đã có vector trên RAG
-            updateFastApiVisibilityAsync(documentId, document.getVisibility().name());
         }
+        // NOTE: PRIVATE -> PUBLIC intentionally does NOT call RAG here. The doc was
+        // already indexed as private (chunks + embeddings exist), so moderation can
+        // read GET /documents/{id}/chunks immediately. It enters PENDING; RAG
+        // visibility is flipped to public only after approval (approveDocument).
 
         Map<Integer, String> updatedTags = getVisibleTags(document);
 
@@ -580,24 +615,23 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Async("taskExecutor")
     public void updateFastApiVisibilityAsync(UUID documentId, String visibility) {
-        log.info("Updating FastAPI visibility for document ID: {} to {}", documentId, visibility);
+        log.info("Updating RAG visibility for document ID: {} to {}", documentId, visibility);
         try {
             Map<String, String> payload = Map.of(
-                    "document_id", documentId.toString(),
                     "visibility", visibility
             );
 
             webClient.patch()
-                    .uri(fastApiUrl + "/update-visibility")
+                    .uri(fastApiBaseUrl + "/documents/" + documentId + "/visibility")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()
                     .toBodilessEntity()
                     .timeout(java.time.Duration.ofSeconds(10))
                     .block();
-            log.info("Successfully updated visibility in FastAPI for document ID: {}", documentId);
+            log.info("Successfully updated visibility in RAG for document ID: {}", documentId);
         } catch (Exception e) {
-            log.error("Failed to update visibility in FastAPI for document ID: {}", documentId, e);
+            log.error("Failed to update visibility in RAG for document ID: {}", documentId, e);
         }
     }
 
@@ -639,9 +673,8 @@ public class DocumentServiceImpl implements DocumentService {
     public void deleteFastApiVectorsAsync(UUID documentId) {
         log.info("Deleting FastAPI vectors for document ID: {}", documentId);
         try {
-            String deleteUrl = fastApiUrl.replace("/process", "/delete/") + documentId;
             webClient.delete()
-                    .uri(deleteUrl)
+                    .uri(fastApiBaseUrl + "/documents/" + documentId)
                     .retrieve()
                     .toBodilessEntity()
                     .timeout(java.time.Duration.ofSeconds(10))
@@ -847,8 +880,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .build();
         notificationRepository.save(notification);
 
-        log.info("Document {} successfully approved, status set to PROCESSING. Triggering FastAPI RAG index.", documentId);
-        
+        log.info("Document {} approved -> PROCESSING. Flipping RAG visibility to public + indexing.", documentId);
+        // Flip RAG chunk metadata to public, then embed pending chunks (/index).
+        updateFastApiVisibilityAsync(documentId, DocumentVisibility.PUBLIC.name());
         triggerFastApiAsync(documentId);
     }
 
@@ -886,37 +920,31 @@ public class DocumentServiceImpl implements DocumentService {
                 .build();
         notificationRepository.save(notification);
 
-        log.info("Document {} successfully rejected, status set to REJECTED. Notification sent to owner.", documentId);
+        log.info("Document {} rejected -> REJECTED. Notifying owner + purging extracted/indexed chunks from RAG.", documentId);
+        deleteFastApiVectorsAsync(documentId);
     }
 
     @Async("taskExecutor")
     @Override
     public void triggerFastApiAsync(UUID documentId) {
-        log.info("Triggering FastAPI processing for document ID: {}", documentId);
+        log.info("Triggering RAG index for approved document ID: {}", documentId);
         try {
             DocumentEntity document = documentRepository.findById(documentId)
                     .orElseThrow(() -> new IllegalArgumentException("Document not found with ID: " + documentId));
 
             if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
-                log.info("Document ID {} has been deleted, skipping FastAPI processing", documentId);
+                log.info("Document ID {} has been deleted, skipping RAG index", documentId);
                 return;
             }
 
-            // tạo url truy cập tạm thời
-            String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
-            if (presignedUrl == null) {
-                throw new IllegalStateException("Failed to generate presigned URL");
-            }
-            log.info("Generated temporary access URL for document {}: {}", documentId, presignedUrl);
-
-            log.info("Triggering FastAPI processing for document: {}", documentId);
+            // /index embeds already-extracted chunks (idempotent: no-op if embedded).
+            // No file_url needed — extraction already happened during PENDING.
             Map<String, String> payload = Map.of(
-                    "document_id", documentId.toString(),
-                    "file_url", presignedUrl
+                    "document_id", documentId.toString()
             );
 
             webClient.post()
-                    .uri(fastApiUrl)
+                    .uri(fastApiBaseUrl + "/index")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(payload)
                     .retrieve()
@@ -924,7 +952,7 @@ public class DocumentServiceImpl implements DocumentService {
                     .timeout(java.time.Duration.ofSeconds(10))
                     .block();
 
-            log.info("FastAPI webhook successfully triggered for document ID: {}", documentId);
+            log.info("RAG index triggered for document ID: {}", documentId);
         } catch (Exception e) {
             log.error("Failed to trigger FastAPI for document ID: {}", documentId, e);
             updateDocumentStatus(documentId, DocumentStatus.FAILED);

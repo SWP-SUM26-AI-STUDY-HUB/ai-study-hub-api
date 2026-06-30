@@ -71,6 +71,7 @@ aws:
     endpoint: ${AWS_S3_ENDPOINT:}
 
 fastapi:
+  base-url: ${FASTAPI_BASE_URL:http://localhost:8000/api/v1/rag}
   rag-process-url: ${FASTAPI_RAG_PROCESS_URL:http://localhost:8000/api/v1/rag/process}
   rag-chat-url: ${FASTAPI_RAG_CHAT_URL:http://localhost:8000/api/v1/chat}
   chat-timeout-seconds: ${FASTAPI_CHAT_TIMEOUT_SECONDS:30}
