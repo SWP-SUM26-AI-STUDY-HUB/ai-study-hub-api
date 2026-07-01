@@ -51,9 +51,15 @@ public class AdminUserController {
     @PostMapping("/{userId}/ban")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Ban a user account", description = "Updates user status to BANNED, revokes refresh token, and blacklists all active access tokens.")
-    public ApiResponse<Void> banUser(@PathVariable("userId") UUID userId) {
+    public ApiResponse<Void> banUser(
+            @PathVariable("userId") UUID userId,
+            @Valid @RequestBody(required = false) BanRequest request) {
         log.info("Admin request to ban user ID: {}", userId);
-        userSanctionService.banUser(userId);
+        if (request != null && request.getReason() != null && !request.getReason().isBlank()) {
+            userSanctionService.banUser(userId, request.getReason());
+        } else {
+            userSanctionService.banUser(userId);
+        }
         return ApiResponse.success("User banned successfully and all active sessions terminated.");
     }
 
@@ -82,6 +88,13 @@ public class AdminUserController {
     public static class WarnRequest {
         @NotBlank(message = "Warning reason is required.")
         @Size(max = 1000, message = "Warning reason must not exceed 1000 characters.")
+        private String reason;
+    }
+
+    @Getter
+    @Setter
+    public static class BanRequest {
+        @Size(max = 1000, message = "Ban reason must not exceed 1000 characters.")
         private String reason;
     }
 }
