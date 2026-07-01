@@ -28,7 +28,12 @@ import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.DocumentService;
+import vn.ai_study_hub_api.service.AutoModerationService;
 import vn.ai_study_hub_api.service.UploadProvider;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import vn.ai_study_hub_api.security.CustomUserDetails;
 
 import java.io.File;
 import java.util.List;
@@ -50,6 +55,9 @@ public class DocumentServiceImpl implements DocumentService {
     private final StoragePlanRepository storagePlanRepository;
     private final ReviewRepository reviewRepository;
 
+    @Lazy
+    private final AutoModerationService autoModerationService;
+
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
 
@@ -58,6 +66,30 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Value("${app.upload.max-file-size-bytes}")
     private long maxFileSizeBytes;
+
+    private UUID getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            return ((CustomUserDetails) authentication.getPrincipal()).getId();
+        }
+        return null;
+    }
+
+    private Map<Integer, String> getVisibleTags(DocumentEntity doc) {
+        if (doc.getTags() == null || doc.getTags().isEmpty()) {
+            return null;
+        }
+        UUID currentUserId = getCurrentUserId();
+        boolean isOwner = doc.getUploader() != null && doc.getUploader().getId().equals(currentUserId);
+        
+        return doc.getTags().stream()
+                .filter(t -> isOwner 
+                        || t.getVisibility() == null 
+                        || vn.ai_study_hub_api.model.TagVisibility.PUBLIC.equals(t.getVisibility()))
+                .collect(Collectors.toMap(TagEntity::getId, TagEntity::getLabel));
+    }
 
     @Override
     @Transactional
@@ -70,7 +102,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // 1. Check user status
         if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
-            throw new IllegalArgumentException("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload");
         }
 
         // 2. Validate file format
@@ -78,23 +110,23 @@ public class DocumentServiceImpl implements DocumentService {
         String fileExtension = getFileExtension(originalFilename).toLowerCase();
         List<String> allowedExtensions = List.of("pdf", "docx", "txt", "md");
         if (originalFilename == null || !allowedExtensions.contains(fileExtension)) {
-            throw new IllegalArgumentException("Unsupported file format");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format");
         }
 
         // 2b. Validate file size against the per-file limit (default 50MB)
         if (file.getSize() > maxFileSizeBytes) {
             long limitMb = maxFileSizeBytes / (1024L * 1024L);
-            throw new IllegalArgumentException(
+            throw new AppException(HttpStatus.BAD_REQUEST,
                     "Uploaded file size exceeds the " + limitMb + "MB limit. Please choose another file");
         }
 
         // 3. Validate storage limit
         Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
         StoragePlanEntity plan = storagePlanRepository.findById(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Storage plan not found with ID: " + planId));
-        long limitInBytes = plan.getStorageLimit() * 1024L * 1024L * 1024L;
+                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Storage plan not found with ID: " + planId));
+        long limitInBytes = plan.getStorageLimit();
         if (uploader.getStorageUsed() + file.getSize() > limitInBytes) {
-            throw new IllegalArgumentException("Upload failed: file size exceeds remaining storage quota");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Upload failed: file size exceeds remaining storage quota");
         }
 
         // Retrieve and validate tags
@@ -106,6 +138,10 @@ public class DocumentServiceImpl implements DocumentService {
                 }
                 TagEntity tagEntity = tagRepository.findById(tagId)
                         .orElseThrow(() -> new IllegalArgumentException("Tag not found with ID: " + tagId));
+                if (vn.ai_study_hub_api.model.TagVisibility.PRIVATE.equals(tagEntity.getVisibility())
+                        && (tagEntity.getCreatedBy() == null || !tagEntity.getCreatedBy().getId().equals(userId))) {
+                    throw new AppException(HttpStatus.FORBIDDEN, "You are not authorized to use another user's private tag");
+                }
                 tagEntities.add(tagEntity);
             }
         }
@@ -281,7 +317,8 @@ public class DocumentServiceImpl implements DocumentService {
             if (summary != null && !summary.trim().isEmpty()) {
                 document.setSummary(summary);
             }
-            log.info("RAG EXTRACTED. Document {} chunks ready for moderation; status remains {}.", documentId, document.getStatus());
+            log.info("RAG EXTRACTED. Document {} chunks ready for moderation; status remains {}. Triggering auto-moderation.", documentId, document.getStatus());
+            autoModerationService.moderateDocumentAsync(documentId);
         } else {
             // FAILED (or unknown). A PENDING public doc whose extraction failed also goes FAILED.
             if (DocumentStatus.PROCESSING.equals(document.getStatus())
@@ -377,11 +414,7 @@ public class DocumentServiceImpl implements DocumentService {
                                 .build();
                     }
 
-                    Map<Integer, String> tags = null;
-                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
-                        tags = doc.getTags().stream()
-                                .collect(Collectors.toMap(t -> t.getId(), t -> t.getLabel()));
-                    }
+                    Map<Integer, String> tags = getVisibleTags(doc);
 
                     return DocumentResponse.builder()
                             .id(doc.getId())
@@ -454,11 +487,7 @@ public class DocumentServiceImpl implements DocumentService {
                     }
 
                     // Lấy danh sách tag labels format id:label
-                    Map<Integer, String> tags = null;
-                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
-                        tags = doc.getTags().stream()
-                                .collect(Collectors.toMap(t -> t.getId(), t -> t.getLabel()));
-                    }
+                    Map<Integer, String> tags = getVisibleTags(doc);
 
                     return DocumentResponse.builder()
                             .id(doc.getId())
@@ -508,8 +537,15 @@ public class DocumentServiceImpl implements DocumentService {
         if (request.getTags() != null) {
             List<TagEntity> tagEntities = new java.util.ArrayList<>();
             for (Integer tagId : request.getTags()) {
+                if (tagId == null) {
+                    continue;
+                }
                 TagEntity tagEntity = tagRepository.findById(tagId)
                         .orElseThrow(() -> new IllegalArgumentException("Tag not found with ID: " + tagId));
+                if (vn.ai_study_hub_api.model.TagVisibility.PRIVATE.equals(tagEntity.getVisibility())
+                        && (tagEntity.getCreatedBy() == null || !tagEntity.getCreatedBy().getId().equals(userId))) {
+                    throw new AppException(HttpStatus.FORBIDDEN, "You are not authorized to use another user's private tag");
+                }
                 tagEntities.add(tagEntity);
             }
             document.setTags(tagEntities);
@@ -556,8 +592,7 @@ public class DocumentServiceImpl implements DocumentService {
         // read GET /documents/{id}/chunks immediately. It enters PENDING; RAG
         // visibility is flipped to public only after approval (approveDocument).
 
-        Map<Integer, String> updatedTags = document.getTags().stream()
-                .collect(Collectors.toMap(TagEntity::getId, TagEntity::getLabel));
+        Map<Integer, String> updatedTags = getVisibleTags(document);
 
         vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
         if (document.getUploader() != null) {
@@ -707,7 +742,12 @@ public class DocumentServiceImpl implements DocumentService {
 
         List<String> tagsList = java.util.Collections.emptyList();
         if (document.getTags() != null) {
+            UUID currentUserId = userDetails != null ? userDetails.getId() : null;
+            boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(currentUserId);
             tagsList = document.getTags().stream()
+                    .filter(t -> isOwner
+                            || t.getVisibility() == null
+                            || vn.ai_study_hub_api.model.TagVisibility.PUBLIC.equals(t.getVisibility()))
                     .map(vn.ai_study_hub_api.model.TagEntity::getLabel)
                     .collect(Collectors.toList());
         }
@@ -797,11 +837,7 @@ public class DocumentServiceImpl implements DocumentService {
                                 .build();
                     }
 
-                    Map<Integer, String> tags = null;
-                    if (doc.getTags() != null && !doc.getTags().isEmpty()) {
-                        tags = doc.getTags().stream()
-                                .collect(Collectors.toMap(t -> t.getId(), t -> t.getLabel()));
-                    }
+                    Map<Integer, String> tags = getVisibleTags(doc);
 
                     return DocumentResponse.builder()
                             .id(doc.getId())

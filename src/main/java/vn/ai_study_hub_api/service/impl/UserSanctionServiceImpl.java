@@ -15,6 +15,7 @@ import vn.ai_study_hub_api.repository.NotificationRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.ViolationHistoryRepository;
 import vn.ai_study_hub_api.security.JwtTokenProvider;
+import vn.ai_study_hub_api.service.EmailService;
 import vn.ai_study_hub_api.service.RedisTokenService;
 import vn.ai_study_hub_api.service.UserSanctionService;
 
@@ -33,10 +34,21 @@ public class UserSanctionServiceImpl implements UserSanctionService {
     private final RedisTokenService redisTokenService;
     private final JwtTokenProvider tokenProvider;
     private final StringRedisTemplate redisTemplate;
+    private final EmailService emailService;
 
     @Override
     @Transactional
     public void banUser(UUID userId) {
+        long warnCount = violationHistoryRepository.countByUserIdAndStatus(userId, "WARN");
+        String reason = warnCount >= 3 
+                ? "Tài khoản của bạn đã bị khóa (Ban) do nhận đủ 3 lần cảnh cáo."
+                : "Tài khoản của bạn đã bị khóa do vi phạm các điều khoản dịch vụ của chúng tôi.";
+        banUser(userId, reason);
+    }
+
+    @Override
+    @Transactional
+    public void banUser(UUID userId, String reason) {
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found"));
 
@@ -62,26 +74,24 @@ public class UserSanctionServiceImpl implements UserSanctionService {
         // Log violation history
         ViolationHistoryEntity violation = ViolationHistoryEntity.builder()
                 .user(user)
-                .reason("Account banned by administrator")
+                .reason(reason)
                 .status("BANNED")
                 .build();
         violationHistoryRepository.save(violation);
 
         // Send ban notification
-        long warnCount = violationHistoryRepository.countByUserIdAndStatus(userId, "WARN");
-        String notificationContent = warnCount >= 3 
-                ? "Tài khoản của bạn đã bị khóa (Ban) do nhận đủ 3 lần cảnh cáo."
-                : "Tài khoản của bạn đã bị khóa do vi phạm các điều khoản dịch vụ của chúng tôi.";
-
         NotificationEntity notification = NotificationEntity.builder()
                 .user(user)
                 .title("Tài khoản bị khóa (Banned)")
-                .content(notificationContent)
+                .content(reason)
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);
         
-        log.info("Successfully banned user: {}", userId);
+        // Send ban email
+        emailService.sendBanEmail(user.getEmail(), reason);
+        
+        log.info("Successfully banned user: {} with reason: {}", userId, reason);
     }
 
     @Override

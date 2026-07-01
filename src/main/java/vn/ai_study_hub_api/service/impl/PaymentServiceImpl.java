@@ -14,7 +14,9 @@ import vn.ai_study_hub_api.model.InvoiceStatus;
 import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserStatus;
+import vn.ai_study_hub_api.model.NotificationEntity;
 import vn.ai_study_hub_api.repository.InvoiceRepository;
+import vn.ai_study_hub_api.repository.NotificationRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.PaymentService;
@@ -32,6 +34,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final StoragePlanRepository storagePlanRepository;
     private final InvoiceRepository invoiceRepository;
     private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
 
     @Value("${vnpay.tmn-code}")
     private String tmnCode;
@@ -53,6 +56,10 @@ public class PaymentServiceImpl implements PaymentService {
         // 1. Lấy Storage Plan từ database
         StoragePlanEntity plan = storagePlanRepository.findById(planId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Storage plan not found"));
+
+        if (plan.getPrice() != null && plan.getPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Cannot initiate payment for a free plan.");
+        }
 
         // 2. tạo hóa đơn đang cờ xử lý trong db
         InvoiceEntity invoice = InvoiceEntity.builder()
@@ -100,32 +107,23 @@ public class PaymentServiceImpl implements PaymentService {
         // 4. sắp xếp thuộc tính và tính toán bằng HMAC-SHA512
         List<String> fieldNames = new ArrayList<>(vnp_Params.keySet());
         Collections.sort(fieldNames);
-        StringBuilder hashData = new StringBuilder();
-        StringBuilder query = new StringBuilder();
-        Iterator<String> itr = fieldNames.iterator();
-        while (itr.hasNext()) {
-            String fieldName = itr.next();
+        List<String> queryParts = new ArrayList<>();
+        List<String> hashParts = new ArrayList<>();
+        
+        for (String fieldName : fieldNames) {
             String fieldValue = vnp_Params.get(fieldName);
-            if ((fieldValue != null) && (fieldValue.length() > 0)) {
-                // Build hash data
-                hashData.append(fieldName);
-                hashData.append('=');
-                hashData.append(URLEncoder.encode(fieldValue, StandardCharsets.US_ASCII));
+            if (fieldValue != null && !fieldValue.isEmpty()) {
+                String encodedValue = URLEncoder.encode(fieldValue, StandardCharsets.UTF_8);
+                String encodedName = URLEncoder.encode(fieldName, StandardCharsets.UTF_8);
                 
-                // Build query string
-                query.append(URLEncoder.encode(fieldName, StandardCharsets.US_ASCII));
-                query.append('=');
-                query.append(URLEncoder.encode(fieldValue, StandardCharsets.US_ASCII));
-                
-                if (itr.hasNext()) {
-                    query.append('&');
-                    hashData.append('&');
-                }
+                queryParts.add(encodedName + "=" + encodedValue);
+                hashParts.add(fieldName + "=" + encodedValue);
             }
         }
         
-        String queryUrl = query.toString();
-        String vnp_SecureHash = VNPayUtil.hmacSHA512(hashSecret, hashData.toString());
+        String queryUrl = String.join("&", queryParts);
+        String hashData = String.join("&", hashParts);
+        String vnp_SecureHash = VNPayUtil.hmacSHA512(hashSecret, hashData);
         queryUrl += "&vnp_SecureHash=" + vnp_SecureHash;
         
         String finalPaymentUrl = payUrl + "?" + queryUrl;
@@ -164,7 +162,7 @@ public class PaymentServiceImpl implements PaymentService {
             return response;
         }
 
-        Optional<InvoiceEntity> invoiceOpt = invoiceRepository.findById(invoiceId);
+        Optional<InvoiceEntity> invoiceOpt = invoiceRepository.findByIdForUpdate(invoiceId);
         if (invoiceOpt.isEmpty()) {
             log.warn("Invoice not found with ID: {}", invoiceId);
             response.put("RspCode", "01");
@@ -226,6 +224,17 @@ public class PaymentServiceImpl implements PaymentService {
 
             userRepository.save(user);
             log.info("Successfully updated invoice {} and upgraded user {} to plan {}", invoiceId, user.getId(), invoice.getPlanId());
+
+            // Lưu thông báo thành công cho người dùng
+            StoragePlanEntity upgradedPlan = storagePlanRepository.findById(invoice.getPlanId()).orElse(null);
+            String planName = upgradedPlan != null ? upgradedPlan.getName() : "Premium";
+            
+            notificationRepository.save(NotificationEntity.builder()
+                    .user(user)
+                    .title("Nâng cấp gói cước thành công")
+                    .content("Chúc mừng! Tài khoản của bạn đã được nâng cấp lên gói " + planName + " thành công. Hạn sử dụng của bạn là đến " + user.getPlanExpiresAt())
+                    .isRead(false)
+                    .build());
         } else {
             invoice.setStatus(InvoiceStatus.FAILED);
             invoice.setTransactionId(vnp_TransactionNo);

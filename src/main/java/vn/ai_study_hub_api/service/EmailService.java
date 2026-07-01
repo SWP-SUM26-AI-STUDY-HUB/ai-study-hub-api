@@ -49,4 +49,28 @@ public class EmailService {
             throw new RuntimeException("Failed to send email: " + e.getMessage());
         }
     }
+
+    public void sendBanEmail(String toEmail, String reason) {
+        jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
+        try {
+            org.springframework.mail.javamail.MimeMessageHelper helper =
+                    new org.springframework.mail.javamail.MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setTo(toEmail);
+            helper.setSubject("[AI Study Hub] - Tài khoản của bạn đã bị khóa");
+
+            String htmlContent = "<h3>Xin chào,</h3>"
+                    + "<p>Chúng tôi rất tiếc phải thông báo rằng tài khoản của bạn tại <b>AI Study Hub</b> đã bị khóa (banned).</p>"
+                    + "<p><b>Lý do khóa tài khoản:</b> " + reason + "</p>"
+                    + "<p>Nếu bạn cho rằng đây là sự nhầm lẫn hoặc muốn thực hiện khiếu nại, vui lòng liên hệ với bộ phận hỗ trợ của chúng tôi.</p>"
+                    + "<br><p>Trân trọng,<br><b>AI Study Hub Team</b></p>";
+
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+        } catch (Exception e) {
+            // Log warning but do not throw to avoid blocking the ban transaction
+            org.slf4j.LoggerFactory.getLogger(EmailService.class)
+                .warn("Failed to send ban email to {}: {}", toEmail, e.getMessage());
+        }
+    }
 }
