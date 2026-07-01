@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -25,10 +26,11 @@ public interface ChatbotClient {
      * @param query      the user question
      * @param userId     authenticated user id (sent as string; chatbot uses it when documentId is null
      *                   to scope retrieval to all of the user's documents)
-     * @param documentId specific document to query, or null to query all of the user's documents
+     * @param history   prior turns of the same session (oldest first) for multi-turn
+     *                  context, or null/empty for the first turn
      * @return parsed chatbot response
      */
-    ChatbotResponse chat(String query, UUID userId, UUID documentId);
+    ChatbotResponse chat(String query, UUID userId, UUID documentId, List<HistoryTurn> history);
 
     @Getter
     @Setter
@@ -43,6 +45,23 @@ public interface ChatbotClient {
 
         @JsonProperty("document_id")
         private String documentId;
+
+        /** Prior turns of the same chat session, oldest first (P0 multi-turn memory). */
+        @JsonProperty("history")
+        private List<HistoryTurn> history;
+    }
+
+    /** One turn of conversation history sent to the RAG service ({role, content}). */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    class HistoryTurn {
+        @JsonProperty("role")
+        private String role;
+
+        @JsonProperty("content")
+        private String content;
     }
 
     @Getter

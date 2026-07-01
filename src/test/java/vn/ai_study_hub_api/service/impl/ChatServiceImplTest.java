@@ -30,6 +30,8 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -96,7 +98,7 @@ class ChatServiceImplTest {
         when(aiQuotaService.checkAndIncrement(userId)).thenReturn(new AiQuotaService.QuotaInfo(1, 15, 14));
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(ownedDocument));
-        when(chatbotClient.chat(eq("What is X?"), eq(userId), eq(documentId)))
+        when(chatbotClient.chat(eq("What is X?"), eq(userId), eq(documentId), anyList()))
                 .thenReturn(new ChatbotClient.ChatbotResponse(true, "ok",
                         new ChatbotClient.ResponseData("answer text", qaDebug(documentId, 3))));
 
@@ -116,7 +118,7 @@ class ChatServiceImplTest {
         assertEquals("actual snippet body text", citation.getSnippet());
 
         verify(chatMessageRepository, times(2)).save(any());
-        verify(chatbotClient, times(1)).chat(eq("What is X?"), eq(userId), eq(documentId));
+        verify(chatbotClient, times(1)).chat(eq("What is X?"), eq(userId), eq(documentId), anyList());
     }
 
     @Test
@@ -137,7 +139,7 @@ class ChatServiceImplTest {
         docs.append("]");
         JsonNode debug = objectMapper.readTree("{\"documents\":" + docs + "}");
 
-        when(chatbotClient.chat(eq("q"), eq(userId), eq(documentId)))
+        when(chatbotClient.chat(eq("q"), eq(userId), eq(documentId), anyList()))
                 .thenReturn(new ChatbotClient.ChatbotResponse(true, "ok",
                         new ChatbotClient.ResponseData("answer [1][3]", debug)));
 
@@ -165,7 +167,7 @@ class ChatServiceImplTest {
                 () -> chatService.chat(request("q", documentId, null), userId));
 
         assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
-        verify(chatbotClient, never()).chat(anyString(), any(), any());
+        verify(chatbotClient, never()).chat(anyString(), any(), any(), anyList());
     }
 
     @Test
@@ -178,7 +180,7 @@ class ChatServiceImplTest {
                 () -> chatService.chat(request("q", null, sessionId), userId));
 
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
-        verify(chatbotClient, never()).chat(anyString(), any(), any());
+        verify(chatbotClient, never()).chat(anyString(), any(), any(), anyList());
     }
 
     @Test
@@ -186,7 +188,7 @@ class ChatServiceImplTest {
         when(aiQuotaService.checkAndIncrement(userId)).thenReturn(new AiQuotaService.QuotaInfo(2, 15, 13));
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(ownedDocument));
-        when(chatbotClient.chat(eq("Summarize this document"), eq(userId), eq(documentId)))
+        when(chatbotClient.chat(eq("Summarize this document"), eq(userId), eq(documentId), anyList()))
                 .thenReturn(new ChatbotClient.ChatbotResponse(true, "ok",
                         new ChatbotClient.ResponseData("a summary", null)));
 

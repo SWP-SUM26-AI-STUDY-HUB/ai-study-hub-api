@@ -14,6 +14,7 @@ import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.service.ChatbotClient;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -31,12 +32,12 @@ public class ChatbotClientImpl implements ChatbotClient {
     private int timeout;
 
     @Override
-    public ChatbotResponse chat(String query, UUID userId, UUID documentId) {
-        ChatbotRequest req = new ChatbotRequest(
-                query,
-                userId.toString(),
-                documentId == null ? null : documentId.toString()
-        );
+    public ChatbotResponse chat(String query, UUID userId, UUID documentId, List<HistoryTurn> history) {
+        ChatbotRequest req = new ChatbotRequest();
+        req.setQuery(query);
+        req.setUserId(userId.toString());
+        req.setDocumentId(documentId == null ? null : documentId.toString());
+        req.setHistory(history == null ? List.of() : history);
 
         log.info("Calling chatbot {} for user={} documentId={}", chatUrl, userId, documentId);
 

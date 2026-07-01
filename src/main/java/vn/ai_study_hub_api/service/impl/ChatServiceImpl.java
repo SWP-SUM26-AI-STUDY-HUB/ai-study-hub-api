@@ -44,6 +44,7 @@ public class ChatServiceImpl implements ChatService {
 
     private static final int TITLE_MAX_LENGTH = 50;
     private static final int SNIPPET_MAX_LENGTH = 150;
+    private static final int HISTORY_WINDOW = 10;
     private static final Pattern PAGE_PATTERN = Pattern.compile("(?i)page[:\\s]+(\\d+)");
 
     private final ChatSessionRepository chatSessionRepository;
@@ -82,6 +83,11 @@ public class ChatServiceImpl implements ChatService {
         }
         session = chatSessionRepository.save(session);
 
+        // Gather prior turns of this session for multi-turn context (P0). Built BEFORE
+        // persisting the current user message so the current query isn't duplicated
+        // (it is sent separately as `query`).
+        List<ChatbotClient.HistoryTurn> history = buildHistory(session.getId());
+
         // 4. Persist the user message.
         ChatMessageEntity userMessage = ChatMessageEntity.builder()
                 .id(UUID.randomUUID())
@@ -92,7 +98,7 @@ public class ChatServiceImpl implements ChatService {
         chatMessageRepository.save(userMessage);
 
         // 5. Call the chatbot (blocking JSON).
-        ChatbotClient.ChatbotResponse botResponse = chatbotClient.chat(query, userId, req.getDocumentId());
+        ChatbotClient.ChatbotResponse botResponse = chatbotClient.chat(query, userId, req.getDocumentId(), history);
         if (botResponse == null || botResponse.getData() == null) {
             throw new AppException(HttpStatus.BAD_GATEWAY, "Chatbot returned an empty response");
         }
@@ -200,6 +206,28 @@ public class ChatServiceImpl implements ChatService {
                 .user(user)
                 .title(title)
                 .build();
+    }
+
+    /**
+     * Builds the conversation history for multi-turn RAG context (P0): the most
+     * recent {@link #HISTORY_WINDOW} messages of the session, oldest first, mapped
+     * to the RAG wire shape ({@code role} = "user"/"assistant"). Excludes blank turns.
+     */
+    private List<ChatbotClient.HistoryTurn> buildHistory(UUID sessionId) {
+        List<ChatMessageEntity> messages = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+        if (messages.isEmpty()) {
+            return List.of();
+        }
+        int from = Math.max(0, messages.size() - HISTORY_WINDOW);
+        List<ChatbotClient.HistoryTurn> turns = new ArrayList<>();
+        for (ChatMessageEntity m : messages.subList(from, messages.size())) {
+            String role = MessageSender.USER.equals(m.getSender()) ? "user" : "assistant";
+            String content = m.getContent();
+            if (content != null && !content.isBlank()) {
+                turns.add(new ChatbotClient.HistoryTurn(role, content));
+            }
+        }
+        return turns;
     }
 
     private ChatSessionEntity requireOwnedSession(UUID sessionId, UUID userId) {

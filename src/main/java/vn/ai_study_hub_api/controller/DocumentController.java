@@ -138,7 +138,20 @@ public class        DocumentController {
 
         java.util.List<String> tags = java.util.Collections.emptyList();
         if (document.getTags() != null) {
+            UUID currentUserId = null;
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.isAuthenticated()
+                    && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                    && authentication.getPrincipal() instanceof CustomUserDetails) {
+                currentUserId = ((CustomUserDetails) authentication.getPrincipal()).getId();
+            }
+            final UUID finalCurrentUserId = currentUserId;
+            boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(finalCurrentUserId);
+
             tags = document.getTags().stream()
+                    .filter(t -> isOwner
+                            || t.getVisibility() == null
+                            || vn.ai_study_hub_api.model.TagVisibility.PUBLIC.equals(t.getVisibility()))
                     .map(vn.ai_study_hub_api.model.TagEntity::getLabel)
                     .collect(java.util.stream.Collectors.toList());
         }

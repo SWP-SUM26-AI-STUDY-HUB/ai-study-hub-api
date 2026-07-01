@@ -22,7 +22,7 @@ HTTP request
 ```
 
 Key cross-process integrations are abstracted behind interfaces:
-- **`ChatbotClient` → `ChatbotClientImpl`**: synchronous blocking `WebClient` POST to `${fastapi.rag-chat-url}` (`.timeout(chat-timeout-seconds).block()`); `DocumentServiceImpl` POSTs to `${fastapi.rag-process-url}`. One shared `WebClient` bean (`config/WebClientConfig`).
+- **`ChatbotClient` → `ChatbotClientImpl`**: synchronous blocking `WebClient` POST to `${fastapi.rag-chat-url}` (`.timeout(chat-timeout-seconds).block()`). The `/chat` body includes the session's prior turns as `history` (`{role, content}`, oldest first, ≤10) for multi-turn RAG memory — built by `ChatServiceImpl` from `chat_messages` and passed via the 4-arg `ChatbotClient.chat(query, userId, documentId, history)`. `DocumentServiceImpl` POSTs to `${fastapi.rag-process-url}`. One shared `WebClient` bean (`config/WebClientConfig`).
 - **`UploadProvider` → `S3UploadProvider`** (sole impl): AWS SDK v2, presigned URLs (10-min GET).
 - **`AiQuotaService`**: Redis-backed daily per-user AI request counter (`user:ai_limit:{userId}:{date}`); throws HTTP 429 on overflow.
 - **`RedisTokenService`**: refresh-token storage/rotation + access-token blacklist + OTP (`refresh_token:`, `blacklist_token:`, `otp:` keys).
@@ -118,7 +118,7 @@ docker compose up --build -d
 | `security/JwtAuthenticationFilter.java` | Bearer validation + Redis blacklist check + user load |
 | `service/impl/AuthServiceImpl.java` | Login (issue + store refresh), rotate-on-refresh, logout blacklist |
 | `service/impl/DocumentServiceImpl.java` | Core upload/processing state machine + all `@Async` FastAPI orchestration |
-| `service/impl/ChatServiceImpl.java` | Chat sessions, AI-quota enforcement, citation extraction from RAG JSON |
+| `service/impl/ChatServiceImpl.java` | Chat sessions, AI-quota enforcement, multi-turn `history` construction (last 10 `chat_messages` → RAG), citation extraction from RAG JSON |
 | `service/impl/RedisTokenServiceImpl.java` | Redis keys: `refresh_token:`, `blacklist_token:`, `otp:` |
 | `service/impl/S3UploadProvider.java` | Sole `UploadProvider` impl (AWS SDK v2, presigned URLs) |
 | `repository/DocumentChunkRepository.java` | Read-only `document_chunks` query (`ChunkContentProjection`) — moderation input. Never writes (RAG owns the table). |
@@ -148,7 +148,7 @@ All RAG ingest endpoints live under `fastapi.base-url` (default `http://localhos
 | API → RAG | `POST {base}/index` | `{document_id}` | After approval: embed pending chunks + rebuild BM25. Idempotent. |
 | API → RAG | `PATCH {base}/documents/{id}/visibility` | `{visibility}` | Stamp visibility into chunk metadata (metadata only; this API gates retrieval). |
 | API → RAG | `DELETE {base}/documents/{id}` | — | Delete all chunks + parent docs + rebuild BM25 (reject / delete flow). |
-| API → RAG | `POST /api/v1/chat` | `{query, user_id, document_id}` | Chat. Response envelope mirrors `ApiResponse` (`data.llm_response` + `data.debug.documents` for citations). `/chat` LLM-routes SUMMARY vs QA. |
+| API → RAG | `POST /api/v1/chat` | `{query, user_id, document_id, history}` | Chat. `history` = the session's prior turns (`{role, content}`, oldest first, ≤10) for multi-turn memory. Response envelope mirrors `ApiResponse` (`data.llm_response` + `data.debug.documents` for citations). RAG **deterministically** routes SMALLTALK / SUMMARY / QA (no LLM); smalltalk returns a canned reply with no `documents` (→ 0 citations), and the QA branch short-circuits when retrieval is empty. |
 | RAG → API | `POST /api/v1/internal/documents/callback` | `{document_id, status, summary}` + header `X-Internal-Secret` | Guarded by `InternalDocumentController` (`app.internal.secret`); mismatch → 403. `status` ∈ `SUCCESS` (→ `COMPLETED` if `PROCESSING`), `EXTRACTED` (stores summary, status unchanged), `FAILED` (→ `FAILED`). Retried 3× with backoff. |
 
 > **Moderation reads `document_chunks` directly** (shared DB) via a read-only Java repository — `DocumentChunkRepository` returns a `ChunkContentProjection`. There is intentionally **no `/chunks` endpoint on RAG**: the moderation service lives in this backend, so it queries the shared DB instead of an HTTP hop.
@@ -188,7 +188,7 @@ Two-phase, in `app/services/ingestion.py`: `_extract` and `_index`. `process_doc
 
 ### Retrieval (QA branch)
 
-Hybrid search: **BM25** (over parent docs, filtered to the requested `document_id`s) **+ dense** pgvector cosine (HNSW, `k=25`), combined via `EnsembleRetriever`, then **Jina cross-encoder re-rank** → top context → Gemini generation. `similarity_search_by_vector` filters `embedding IS NOT NULL`, so extracted-but-not-indexed (public, pre-approval) chunks are never surfaced. The generator emits **numeric citation markers `[N]`** mapping 1:1 to the `documents` list in `debug`. **Multi-query OFF by default** (`ENABLE_MULTI_QUERY=1`; costs ~6s/extra LLM call).
+Hybrid search: **BM25** (over parent docs, filtered to the requested `document_id`s) **+ dense** pgvector cosine (HNSW, `k=25`), combined via `EnsembleRetriever`, then **Jina cross-encoder re-rank** → top context → Gemini generation. `similarity_search_by_vector` filters `embedding IS NOT NULL`, so extracted-but-not-indexed (public, pre-approval) chunks are never surfaced. The generator emits **numeric citation markers `[N]`** mapping 1:1 to the `documents` list in `debug`, and consumes the sent `history` to resolve follow-up references (still cites `[N]` only from retrieved context). Routing is **deterministic (regex, no LLM)** — SMALLTALK → SUMMARY (needs a selected doc) → QA (default); the QA branch short-circuits with a fixed message when retrieval is empty. **Multi-query OFF by default** (`ENABLE_MULTI_QUERY=1`; costs ~6s/extra LLM call).
 
 ### Shared state & gotchas
 
@@ -199,7 +199,7 @@ Hybrid search: **BM25** (over parent docs, filtered to the requested `document_i
 - **`fastapi.base-url`** (`${FASTAPI_BASE_URL:http://localhost:8000/api/v1/rag}`) is the base for all RAG ingest endpoints (`/process`, `/extract`, `/index`, `/documents/{id}/...`); `fastapi.rag-process-url` (private `/process`) and `fastapi.rag-chat-url` are retained for those two specific calls.
 - **RAG clients are process-wide singletons** (LLM, embeddings, reranker) warmed at startup to avoid a ~14s Gemini cold-start.
 - **RAG config** (`app/core/config.py` + `.env`): `DATABASE_URL`, `BACKEND_CALLBACK_URL`, `INTERNAL_API_SECRET`, `JINA_API_KEY`, Google API key, `ENABLE_MULTI_QUERY`, `DB_POOL_MAX` (20), `TEMP_DIR`.
-- **RAG endpoints for reference**: `POST /api/v1/rag/process`, `POST /api/v1/rag/extract`, `POST /api/v1/rag/index`, `PATCH /api/v1/rag/documents/{id}/visibility`, `DELETE /api/v1/rag/documents/{id}`, `POST /api/v1/chat`, `POST /api/v1/chat/retrieve`.
+- **RAG endpoints for reference**: `POST /api/v1/rag/process`, `POST /api/v1/rag/extract`, `POST /api/v1/rag/index`, `PATCH /api/v1/rag/documents/{id}/visibility`, `DELETE /api/v1/rag/documents/{id}`, `POST /api/v1/chat`. (The old `/api/v1/chat/retrieve` debug endpoint was removed.)
 
 ## Runtime / Tooling Preferences
 
