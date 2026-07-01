@@ -28,7 +28,9 @@ import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.DocumentService;
+import vn.ai_study_hub_api.service.AutoModerationService;
 import vn.ai_study_hub_api.service.UploadProvider;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import vn.ai_study_hub_api.security.CustomUserDetails;
@@ -52,6 +54,9 @@ public class DocumentServiceImpl implements DocumentService {
     private final WebClient webClient;
     private final StoragePlanRepository storagePlanRepository;
     private final ReviewRepository reviewRepository;
+
+    @Lazy
+    private final AutoModerationService autoModerationService;
 
     @Value("${fastapi.rag-process-url}")
     private String fastApiUrl;
@@ -312,7 +317,8 @@ public class DocumentServiceImpl implements DocumentService {
             if (summary != null && !summary.trim().isEmpty()) {
                 document.setSummary(summary);
             }
-            log.info("RAG EXTRACTED. Document {} chunks ready for moderation; status remains {}.", documentId, document.getStatus());
+            log.info("RAG EXTRACTED. Document {} chunks ready for moderation; status remains {}. Triggering auto-moderation.", documentId, document.getStatus());
+            autoModerationService.moderateDocumentAsync(documentId);
         } else {
             // FAILED (or unknown). A PENDING public doc whose extraction failed also goes FAILED.
             if (DocumentStatus.PROCESSING.equals(document.getStatus())

@@ -99,3 +99,7 @@ vnpay:
   hash-secret: ${VNPAY_HASH_SECRET}
   pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
   return-url: ${VNPAY_RETURN_URL:http://localhost:8080/api/v1/payments/vnpay-callback}
+
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  moderation-url: ${OPENAI_MODERATION_URL:https://api.openai.com/v1/moderations}
