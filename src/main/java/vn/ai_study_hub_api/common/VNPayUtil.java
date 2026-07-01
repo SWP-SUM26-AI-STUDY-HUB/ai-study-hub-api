@@ -33,6 +33,9 @@ public class VNPayUtil {
         if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
             ipAddress = request.getRemoteAddr();
         }
+        if ("0:0:0:0:0:0:0:1".equals(ipAddress) || "::1".equals(ipAddress)) {
+            ipAddress = "127.0.0.1";
+        }
         return ipAddress;
     }
 
@@ -47,21 +50,15 @@ public class VNPayUtil {
 
         java.util.List<String> fieldNames = new java.util.ArrayList<>(params.keySet());
         java.util.Collections.sort(fieldNames);
-        StringBuilder hashData = new StringBuilder();
-        java.util.Iterator<String> itr = fieldNames.iterator();
-        while (itr.hasNext()) {
-            String fieldName = itr.next();
+        java.util.List<String> queryParts = new java.util.ArrayList<>();
+        for (String fieldName : fieldNames) {
             String fieldValue = params.get(fieldName);
-            if ((fieldValue != null) && (fieldValue.length() > 0)) {
-                hashData.append(fieldName);
-                hashData.append('=');
-                hashData.append(java.net.URLEncoder.encode(fieldValue, java.nio.charset.StandardCharsets.US_ASCII));
-                if (itr.hasNext()) {
-                    hashData.append('&');
-                }
+            if (fieldValue != null && !fieldValue.isEmpty()) {
+                queryParts.add(fieldName + "=" + java.net.URLEncoder.encode(fieldValue, java.nio.charset.StandardCharsets.UTF_8));
             }
         }
-        String calculatedHash = hmacSHA512(hashSecret, hashData.toString());
+        String hashData = String.join("&", queryParts);
+        String calculatedHash = hmacSHA512(hashSecret, hashData);
         return calculatedHash.equalsIgnoreCase(vnp_SecureHash);
     }
 }
