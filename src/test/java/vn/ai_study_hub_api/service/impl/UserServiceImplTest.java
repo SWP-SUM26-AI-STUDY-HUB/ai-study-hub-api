@@ -178,11 +178,17 @@ public class UserServiceImplTest {
         
         mockUser1.setAvatarUrl("avatars/old-avatar.png");
         
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        javax.imageio.ImageIO.write(img, "png", baos);
+        java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(baos.toByteArray());
+        
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser1));
         when(mockAvatar.isEmpty()).thenReturn(false);
         when(mockAvatar.getSize()).thenReturn(1024L * 1024L); // 1MB
         when(mockAvatar.getContentType()).thenReturn("image/png");
         when(mockAvatar.getOriginalFilename()).thenReturn("avatar.png");
+        when(mockAvatar.getInputStream()).thenReturn(bais);
         when(uploadProvider.getPublicUrl(anyString())).thenReturn("http://presigned-url-mock.com/avatar");
         
         when(userRepository.save(any(UserEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -215,15 +221,21 @@ public class UserServiceImplTest {
     }
 
     @Test
-    void updateAvatar_Failure_UnsupportedFileFormat() {
+    void updateAvatar_Failure_UnsupportedFileFormat() throws java.io.IOException {
         // Arrange
         UUID userId = mockUser1.getId();
         org.springframework.web.multipart.MultipartFile mockAvatar = mock(org.springframework.web.multipart.MultipartFile.class);
+        
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        javax.imageio.ImageIO.write(img, "gif", baos);
+        java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(baos.toByteArray());
         
         when(mockAvatar.isEmpty()).thenReturn(false);
         when(mockAvatar.getSize()).thenReturn(1024L);
         when(mockAvatar.getContentType()).thenReturn("image/gif"); // gif is unsupported
         when(mockAvatar.getOriginalFilename()).thenReturn("avatar.gif");
+        when(mockAvatar.getInputStream()).thenReturn(bais);
         
         // Act & Assert
         AppException exception = assertThrows(AppException.class, () -> 
@@ -233,15 +245,21 @@ public class UserServiceImplTest {
     }
 
     @Test
-    void updateAvatar_Failure_UserNotFound() {
+    void updateAvatar_Failure_UserNotFound() throws java.io.IOException {
         // Arrange
         UUID userId = UUID.randomUUID();
         org.springframework.web.multipart.MultipartFile mockAvatar = mock(org.springframework.web.multipart.MultipartFile.class);
+        
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        javax.imageio.ImageIO.write(img, "png", baos);
+        java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(baos.toByteArray());
         
         when(mockAvatar.isEmpty()).thenReturn(false);
         when(mockAvatar.getSize()).thenReturn(1024L);
         when(mockAvatar.getContentType()).thenReturn("image/png");
         when(mockAvatar.getOriginalFilename()).thenReturn("avatar.png");
+        when(mockAvatar.getInputStream()).thenReturn(bais);
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
         
         // Act & Assert

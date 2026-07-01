@@ -22,10 +22,13 @@ import vn.ai_study_hub_api.service.UserService;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 
 
 @Service
@@ -126,10 +129,25 @@ public class UserServiceImpl implements UserService {
             extension = originalFilename.substring(originalFilename.lastIndexOf('.') + 1).toLowerCase();
         }
 
-        boolean isValidContentType = contentType != null && (contentType.equals("image/jpeg") || contentType.equals("image/png"));
-        boolean isValidExtension = extension.equals("jpg") || extension.equals("jpeg") || extension.equals("png");
+        // Verify that the file content is actually a valid image
+        try (InputStream is = avatar.getInputStream()) {
+            BufferedImage image = ImageIO.read(is);
+            if (image == null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format. Only JPEG and PNG are allowed");
+            }
+        } catch (IOException e) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Invalid image data");
+        }
 
-        if (!isValidContentType || (!extension.isEmpty() && !isValidExtension)) {
+        // Verify that the format (extension or content-type) belongs to whitelisted types (JPEG/PNG)
+        boolean isValidFormat = false;
+        if (!extension.isEmpty()) {
+            isValidFormat = extension.equals("jpg") || extension.equals("jpeg") || extension.equals("png");
+        } else if (contentType != null) {
+            isValidFormat = contentType.equals("image/jpeg") || contentType.equals("image/jpg") || contentType.equals("image/png") || contentType.equals("application/octet-stream");
+        }
+
+        if (!isValidFormat) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format. Only JPEG and PNG are allowed");
         }
 
