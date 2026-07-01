@@ -122,7 +122,7 @@ public class DocumentServiceImplTest {
         StoragePlanEntity mockPlan = StoragePlanEntity.builder()
                 .id(1)
                 .name("Free")
-                .storageLimit(1L) // 1 GB
+                .storageLimit(1L * 1024L * 1024L * 1024L) // 1 GB in bytes
                 .maxAiRequestsPerDay(15)
                 .build();
 
@@ -373,7 +373,7 @@ public class DocumentServiceImplTest {
         mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+        AppException exception = assertThrows(AppException.class, () -> 
                 documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload", exception.getMessage());
@@ -391,7 +391,7 @@ public class DocumentServiceImplTest {
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+        AppException exception = assertThrows(AppException.class, () -> 
                 documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Unsupported file format", exception.getMessage());
@@ -412,14 +412,14 @@ public class DocumentServiceImplTest {
         StoragePlanEntity mockPlan = StoragePlanEntity.builder()
                 .id(1)
                 .name("Free")
-                .storageLimit(1L) // 1 GB
+                .storageLimit(1L * 1024L * 1024L * 1024L) // 1 GB in bytes
                 .maxAiRequestsPerDay(15)
                 .build();
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+        AppException exception = assertThrows(AppException.class, () -> 
                 documentService.initiateUpload(file, "My Custom Title", List.of(1), "Doc Description", DocumentVisibility.PUBLIC, userId)
         );
         assertEquals("Upload failed: file size exceeds remaining storage quota", exception.getMessage());
@@ -434,7 +434,7 @@ public class DocumentServiceImplTest {
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
 
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
+        AppException exception = assertThrows(AppException.class, () ->
                 documentService.initiateUpload(file, "Big Doc", List.of(1), null, DocumentVisibility.PRIVATE, userId)
         );
         assertEquals("Uploaded file size exceeds the 50MB limit. Please choose another file", exception.getMessage());
@@ -530,7 +530,7 @@ public class DocumentServiceImplTest {
         StoragePlanEntity mockPlan = StoragePlanEntity.builder()
                 .id(1)
                 .name("Free")
-                .storageLimit(1L)
+                .storageLimit(1L * 1024L * 1024L * 1024L) // 1 GB in bytes
                 .maxAiRequestsPerDay(15)
                 .build();
 

@@ -102,7 +102,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // 1. Check user status
         if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
-            throw new IllegalArgumentException("Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Your storage has exceeded the plan limit. Please delete files or upgrade your plan to upload");
         }
 
         // 2. Validate file format
@@ -110,23 +110,23 @@ public class DocumentServiceImpl implements DocumentService {
         String fileExtension = getFileExtension(originalFilename).toLowerCase();
         List<String> allowedExtensions = List.of("pdf", "docx", "txt", "md");
         if (originalFilename == null || !allowedExtensions.contains(fileExtension)) {
-            throw new IllegalArgumentException("Unsupported file format");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Unsupported file format");
         }
 
         // 2b. Validate file size against the per-file limit (default 50MB)
         if (file.getSize() > maxFileSizeBytes) {
             long limitMb = maxFileSizeBytes / (1024L * 1024L);
-            throw new IllegalArgumentException(
+            throw new AppException(HttpStatus.BAD_REQUEST,
                     "Uploaded file size exceeds the " + limitMb + "MB limit. Please choose another file");
         }
 
         // 3. Validate storage limit
         Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
         StoragePlanEntity plan = storagePlanRepository.findById(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Storage plan not found with ID: " + planId));
-        long limitInBytes = plan.getStorageLimit() * 1024L * 1024L * 1024L;
+                .orElseThrow(() -> new AppException(HttpStatus.BAD_REQUEST, "Storage plan not found with ID: " + planId));
+        long limitInBytes = plan.getStorageLimit();
         if (uploader.getStorageUsed() + file.getSize() > limitInBytes) {
-            throw new IllegalArgumentException("Upload failed: file size exceeds remaining storage quota");
+            throw new AppException(HttpStatus.BAD_REQUEST, "Upload failed: file size exceeds remaining storage quota");
         }
 
         // Retrieve and validate tags

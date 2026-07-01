@@ -263,7 +263,7 @@ public class UserServiceImplTest {
         StoragePlanEntity plan = StoragePlanEntity.builder()
                 .id(2)
                 .name("Premium")
-                .storageLimit(10L) // 10 GB
+                .storageLimit(10L * 1024L * 1024L * 1024L) // 10 GB in bytes
                 .build();
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
@@ -293,7 +293,7 @@ public class UserServiceImplTest {
         StoragePlanEntity plan = StoragePlanEntity.builder()
                 .id(1)
                 .name("Free Plan")
-                .storageLimit(2L) // 2 GB
+                .storageLimit(2L * 1024L * 1024L * 1024L) // 2 GB in bytes
                 .build();
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));

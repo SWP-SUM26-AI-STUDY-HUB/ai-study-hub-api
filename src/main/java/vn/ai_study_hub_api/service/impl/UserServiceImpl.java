@@ -215,7 +215,7 @@ public class UserServiceImpl implements UserService {
         StoragePlanEntity plan = storagePlanRepository.findById(planId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Storage plan not found with ID: " + planId));
 
-        long limitInBytes = plan.getStorageLimit() * 1024L * 1024L * 1024L;
+        long limitInBytes = plan.getStorageLimit();
         long usedInBytes = user.getStorageUsed() != null ? user.getStorageUsed() : 0L;
 
         return UserStorageResponse.builder()
