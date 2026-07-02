@@ -34,8 +34,15 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import vn.ai_study_hub_api.security.CustomUserDetails;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -183,6 +190,9 @@ public class DocumentServiceImpl implements DocumentService {
             // Upload file to the storage provider
             uploadProvider.upload(tempFile, storagePath, contentType);
             log.info("Successfully uploaded document {} to storage", documentId);
+
+            // Create and upload preview file
+            createAndUploadPreviewFile(tempFile, storagePath, contentType);
 
             // Fetch the document to check its public/private visibility status
             DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
@@ -523,7 +533,12 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         if (DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Cannot edit public documents");
+            if (request.getTitle() != null || request.getDescription() != null || request.getTags() != null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Cannot edit title, description, or tags of a public document");
+            }
+            if (request.getVisibility() == null || !DocumentVisibility.PRIVATE.name().equalsIgnoreCase(request.getVisibility().trim())) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Public documents can only be changed to private");
+            }
         }
 
         if (request.getTitle() != null && !request.getTitle().trim().isEmpty()) {
@@ -725,7 +740,12 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
         }
 
-        String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
+        String fileKey = document.getFileUrl();
+        if (userDetails == null) {
+            fileKey = getPreviewStoragePath(fileKey);
+        }
+
+        String presignedUrl = uploadProvider.generatePresignedUrl(fileKey);
 
         String uploaderName = null;
         if (document.getUploader() != null) {
@@ -963,5 +983,125 @@ public class DocumentServiceImpl implements DocumentService {
             log.error("Failed to trigger FastAPI for document ID: {}", documentId, e);
             updateDocumentStatus(documentId, DocumentStatus.FAILED);
         }
+    }
+
+    private void createAndUploadPreviewFile(File originalFile, String originalStoragePath, String contentType) {
+        String extension = "";
+        int lastDot = originalStoragePath.lastIndexOf('.');
+        if (lastDot != -1) {
+            extension = originalStoragePath.substring(lastDot + 1).toLowerCase();
+        }
+
+        String previewStoragePath = getPreviewStoragePath(originalStoragePath);
+        File tempPreviewFile = null;
+
+        try {
+            if ("pdf".equals(extension)) {
+                tempPreviewFile = Files.createTempFile("preview-", ".pdf").toFile();
+                truncatePdf(originalFile, tempPreviewFile);
+                uploadProvider.upload(tempPreviewFile, previewStoragePath, contentType);
+                log.info("Successfully generated and uploaded PDF preview for: {}", originalStoragePath);
+            } else if ("docx".equals(extension)) {
+                tempPreviewFile = Files.createTempFile("preview-", ".docx").toFile();
+                truncateDocx(originalFile, tempPreviewFile);
+                uploadProvider.upload(tempPreviewFile, previewStoragePath, contentType);
+                log.info("Successfully generated and uploaded Word preview for: {}", originalStoragePath);
+            } else if ("txt".equals(extension) || "md".equals(extension)) {
+                tempPreviewFile = Files.createTempFile("preview-", "." + extension).toFile();
+                truncateText(originalFile, tempPreviewFile);
+                uploadProvider.upload(tempPreviewFile, previewStoragePath, contentType);
+                log.info("Successfully generated and uploaded text/markdown preview for: {}", originalStoragePath);
+            } else {
+                uploadProvider.upload(originalFile, previewStoragePath, contentType);
+                log.info("Unsupported preview format: {}. Uploaded original file to preview path.", extension);
+            }
+        } catch (Exception e) {
+            log.error("Failed to create preview for {}. Falling back to uploading original file as preview.", originalStoragePath, e);
+            try {
+                uploadProvider.upload(originalFile, previewStoragePath, contentType);
+            } catch (Exception uploadEx) {
+                log.error("Failed to upload original file to preview path for {}", originalStoragePath, uploadEx);
+            }
+        } finally {
+            if (tempPreviewFile != null && tempPreviewFile.exists()) {
+                boolean deleted = tempPreviewFile.delete();
+                log.debug("Cleaned up temp preview file: {}, success: {}", tempPreviewFile.getAbsolutePath(), deleted);
+            }
+        }
+    }
+
+    private void truncatePdf(File originalFile, File tempPreviewFile) throws Exception {
+        try (PDDocument document = Loader.loadPDF(originalFile)) {
+            int totalPages = document.getNumberOfPages();
+            int pagesToKeep = (int) Math.ceil(totalPages * 0.3);
+            pagesToKeep = Math.min(50, Math.max(1, pagesToKeep));
+
+            try (PDDocument previewDoc = new PDDocument()) {
+                for (int i = 0; i < pagesToKeep; i++) {
+                    previewDoc.addPage(document.getPage(i));
+                }
+                previewDoc.save(tempPreviewFile);
+            }
+        }
+    }
+
+    private void truncateDocx(File originalFile, File tempPreviewFile) throws Exception {
+        try (FileInputStream fis = new FileInputStream(originalFile);
+             XWPFDocument document = new XWPFDocument(fis)) {
+            
+            var paragraphs = document.getParagraphs();
+            int totalParagraphs = paragraphs.size();
+            int paragraphsToKeep = (int) Math.ceil(totalParagraphs * 0.3);
+            paragraphsToKeep = Math.min(50, Math.max(1, paragraphsToKeep));
+
+            try (XWPFDocument previewDoc = new XWPFDocument();
+                 FileOutputStream fos = new FileOutputStream(tempPreviewFile)) {
+                
+                for (int i = 0; i < paragraphsToKeep; i++) {
+                    String originalText = paragraphs.get(i).getText();
+                    String[] words = originalText.split("\\s+");
+                    
+                    if (words.length > 200) {
+                        String truncatedText = String.join(" ", java.util.Arrays.copyOfRange(words, 0, 200)) 
+                                + "... [Vui lòng đăng nhập để xem tiếp nội dung]";
+                        previewDoc.createParagraph().createRun().setText(truncatedText);
+                    } else {
+                        previewDoc.createParagraph().createRun().setText(originalText);
+                    }
+                }
+                previewDoc.write(fos);
+            }
+        }
+    }
+
+    private void truncateText(File originalFile, File tempPreviewFile) throws Exception {
+        List<String> lines = Files.readAllLines(originalFile.toPath(), StandardCharsets.UTF_8);
+        int totalLines = lines.size();
+        int linesToKeep = (int) Math.ceil(totalLines * 0.3);
+        linesToKeep = Math.min(100, Math.max(1, linesToKeep));
+
+        List<String> previewLines = new java.util.ArrayList<>();
+        for (int i = 0; i < linesToKeep; i++) {
+            String originalLine = lines.get(i);
+            String[] words = originalLine.split("\\s+");
+            if (words.length > 200) {
+                String truncatedLine = String.join(" ", java.util.Arrays.copyOfRange(words, 0, 200)) 
+                        + "... [Vui lòng đăng nhập để xem tiếp nội dung]";
+                previewLines.add(truncatedLine);
+            } else {
+                previewLines.add(originalLine);
+            }
+        }
+
+        Files.write(tempPreviewFile.toPath(), previewLines, StandardCharsets.UTF_8);
+    }
+
+    private String getPreviewStoragePath(String storagePath) {
+        if (storagePath == null) return null;
+        int lastDot = storagePath.lastIndexOf('.');
+        if (lastDot == -1) {
+            return storagePath + "_preview";
+        }
+        return storagePath.substring(0, lastDot) + "_preview" + storagePath.substring(lastDot);
     }
 }

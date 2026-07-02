@@ -23,7 +23,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     List<UserEntity> findAllByRole(UserRole role);
 
     @Query("SELECT u FROM UserEntity u WHERE " +
-           "(:search IS NULL OR LOWER(u.email) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "(CAST(:search AS string) IS NULL OR LOWER(u.email) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')) OR LOWER(u.fullName) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))) " +
            "AND (:role IS NULL OR u.role = :role) " +
            "AND (:status IS NULL OR u.status = :status)")
     Page<UserEntity> findAllWithFilters(
