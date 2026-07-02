@@ -566,8 +566,8 @@ public class DocumentServiceImplTest {
                 .build();
 
         when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
-        when(uploadProvider.generatePresignedUrl(doc.getFileUrl()))
-                .thenReturn("https://presigned-url/public.pdf");
+        when(uploadProvider.generatePresignedUrl("owner-id/doc-id_preview.pdf"))
+                .thenReturn("https://presigned-url/public_preview.pdf");
         when(reviewRepository.calculateAverageRating(docId)).thenReturn(4.5);
         when(reviewRepository.countByDocumentId(docId)).thenReturn(12L);
 
@@ -576,7 +576,7 @@ public class DocumentServiceImplTest {
         assertNotNull(response);
         assertEquals(docId, response.getDocumentId());
         assertEquals("Public Doc", response.getTitle());
-        assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
+        assertEquals("https://presigned-url/public_preview.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Math test document", response.getDescription());
         assertEquals("Test User", response.getUploaderName());
@@ -586,7 +586,7 @@ public class DocumentServiceImplTest {
         assertEquals("Math", response.getTags().get(0));
 
         verify(documentRepository, times(1)).findById(docId);
-        verify(uploadProvider, times(1)).generatePresignedUrl(doc.getFileUrl());
+        verify(uploadProvider, times(1)).generatePresignedUrl("owner-id/doc-id_preview.pdf");
         verify(reviewRepository, times(1)).calculateAverageRating(docId);
         verify(reviewRepository, times(1)).countByDocumentId(docId);
     }
