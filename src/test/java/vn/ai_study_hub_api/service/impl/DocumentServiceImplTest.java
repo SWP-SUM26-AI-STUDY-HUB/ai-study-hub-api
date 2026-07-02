@@ -1175,8 +1175,37 @@ public class DocumentServiceImplTest {
         );
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
-        assertEquals("Cannot edit public documents", exception.getMessage());
+        assertEquals("Cannot edit title, description, or tags of a public document", exception.getMessage());
         verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void updateDocument_Success_PublicToPrivate() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setVisibility("PRIVATE");
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+        when(documentRepository.save(any(DocumentEntity.class))).thenReturn(doc);
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.updateDocument(docId, request, userId);
+
+        assertNotNull(response);
+        assertEquals("PRIVATE", response.getVisibility());
+        verify(documentRepository, times(1)).save(doc);
     }
 }
 
