@@ -523,7 +523,12 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         if (DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
-            throw new AppException(HttpStatus.BAD_REQUEST, "Cannot edit public documents");
+            if (request.getTitle() != null || request.getDescription() != null || request.getTags() != null) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Cannot edit title, description, or tags of a public document");
+            }
+            if (request.getVisibility() == null || !DocumentVisibility.PRIVATE.name().equalsIgnoreCase(request.getVisibility().trim())) {
+                throw new AppException(HttpStatus.BAD_REQUEST, "Public documents can only be changed to private");
+            }
         }
 
         if (request.getTitle() != null && !request.getTitle().trim().isEmpty()) {
