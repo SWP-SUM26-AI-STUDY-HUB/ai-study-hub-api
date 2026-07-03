@@ -39,6 +39,15 @@ public class TagController {
         return ApiResponse.success(tags, "Tags retrieved successfully");
     }
 
+    @GetMapping("/public")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get All Public Tags", description = "Retrieves all public tags for survey/preference selection. Requires authentication.")
+    public ApiResponse<List<TagResponse>> getAllPublicTags() {
+        log.info("Received request to get all public tags");
+        List<TagResponse> tags = tagService.getAllPublicTags();
+        return ApiResponse.success(tags, "Public tags retrieved successfully");
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Create User Tags (Personal / Private)", description = "Creates private tags for the authenticated user if they do not exist. Returns existing public or user private tags if matching.")
