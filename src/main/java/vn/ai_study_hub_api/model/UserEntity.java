@@ -3,7 +3,10 @@ package vn.ai_study_hub_api.model;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.ColumnTransformer;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -74,4 +77,8 @@ public class UserEntity {
 
     @Column(name = "bio", columnDefinition = "TEXT")
     private String bio;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "preferred_tag_ids", columnDefinition = "integer[]")
+    private List<Integer> preferredTagIds;
 }

@@ -19,6 +19,7 @@ import vn.ai_study_hub_api.service.UserService;
 import vn.ai_study_hub_api.service.AuthService;
 import vn.ai_study_hub_api.controller.request.ChangePasswordRequest;
 import vn.ai_study_hub_api.controller.request.UpdateProfileRequest;
+import vn.ai_study_hub_api.controller.request.SavePreferredTagsRequest;
 import jakarta.validation.Valid;
 
 import java.util.UUID;
@@ -79,6 +80,15 @@ public class UserController {
         UUID userId = getCurrentUserId();
         authService.changePassword(userId, request);
         return ApiResponse.success("Password changed successfully.");
+    }
+
+    @PostMapping("/preferred-tags")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Save preferred tags", description = "Saves user's preferred tags (1-3 public tags) from the onboarding survey.")
+    public ApiResponse<Void> savePreferredTags(@Valid @RequestBody SavePreferredTagsRequest request) {
+        UUID userId = getCurrentUserId();
+        userService.savePreferredTags(userId, request.getTagIds());
+        return ApiResponse.success("Preferred tags saved successfully.");
     }
 
     private UUID getCurrentUserId() {
