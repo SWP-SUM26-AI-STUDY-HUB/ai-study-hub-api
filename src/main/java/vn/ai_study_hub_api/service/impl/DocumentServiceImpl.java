@@ -969,4 +969,68 @@ public class DocumentServiceImpl implements DocumentService {
             updateDocumentStatus(documentId, DocumentStatus.FAILED);
         }
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getRecommendedDocuments(UUID userId) {
+        log.info("Fetching recommended documents for userId: {}", userId);
+
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found."));
+
+        List<Integer> preferredTagIds = user.getPreferredTagIds();
+        if (preferredTagIds == null || preferredTagIds.isEmpty()) {
+            log.info("User {} has no preferred tags, returning empty recommendations", userId);
+            return List.of();
+        }
+
+        // truy vấn các id và sắp xếp(số lượng trùng tag, rating, ngàu up)
+        List<UUID> docIds = documentRepository.findRecommendedDocumentIds(preferredTagIds);
+
+        if (docIds.isEmpty()) {
+            log.info("No recommended documents found for userId: {}", userId);
+            return List.of();
+        }
+
+        // lấy ra 
+        List<DocumentEntity> documents = documentRepository.findAllById(docIds);
+        Map<UUID, DocumentEntity> docMap = documents.stream()
+                .collect(Collectors.toMap(DocumentEntity::getId, doc -> doc));
+
+        return docIds.stream()
+                .map(docMap::get)
+                .filter(java.util.Objects::nonNull)
+                .map(doc -> {
+                    vn.ai_study_hub_api.controller.response.UploaderResponse uploaderResponse = null;
+                    if (doc.getUploader() != null) {
+                        String finalUploaderName = doc.getUploader().getFullName();
+                        if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
+                            finalUploaderName = doc.getUploader().getEmail();
+                        }
+                        uploaderResponse = vn.ai_study_hub_api.controller.response.UploaderResponse.builder()
+                                .id(doc.getUploader().getId())
+                                .fullName(finalUploaderName)
+                                .avatarUrl(doc.getUploader().getAvatarUrl())
+                                .build();
+                    }
+
+                    Map<Integer, String> tags = getVisibleTags(doc);
+
+                    return DocumentResponse.builder()
+                            .id(doc.getId())
+                            .title(doc.getTitle())
+                            .fileName(doc.getTitle())
+                            .fileUrl(doc.getFileUrl())
+                            .fileSize(doc.getFileSizeBytes())
+                            .fileType(doc.getFileType())
+                            .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                            .description(doc.getDescription())
+                            .tags(tags)
+                            .uploader(uploaderResponse)
+                            .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
+                            .createdAt(doc.getCreatedAt())
+                            .build();
+                })
+                .collect(Collectors.toList());
+    }
 }
