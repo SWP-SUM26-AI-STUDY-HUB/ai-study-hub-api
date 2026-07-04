@@ -1047,6 +1047,8 @@ public class DocumentServiceImpl implements DocumentService {
                             .build();
                 })
                 .collect(Collectors.toList());
+    }
+
     private void createAndUploadPreviewFile(File originalFile, String originalStoragePath, String contentType) {
         String extension = "";
         int lastDot = originalStoragePath.lastIndexOf('.');
