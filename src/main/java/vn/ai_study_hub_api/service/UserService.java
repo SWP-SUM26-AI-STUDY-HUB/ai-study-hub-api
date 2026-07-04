@@ -20,4 +20,5 @@ public interface UserService {
     UserResponse updateAvatar(java.util.UUID userId, org.springframework.web.multipart.MultipartFile avatar);
     UserResponse getMyProfile(java.util.UUID userId);
     UserStorageResponse getUserStorage(java.util.UUID userId);
+    void savePreferredTags(java.util.UUID userId, java.util.List<Integer> tagIds);
 }

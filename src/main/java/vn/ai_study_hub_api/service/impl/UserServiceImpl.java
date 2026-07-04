@@ -15,7 +15,10 @@ import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
+import vn.ai_study_hub_api.model.TagEntity;
+import vn.ai_study_hub_api.model.TagVisibility;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
+import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
 import vn.ai_study_hub_api.service.UserService;
@@ -38,12 +41,14 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final UploadProvider uploadProvider;
     private final StoragePlanRepository storagePlanRepository;
+    private final TagRepository tagRepository;
 
     @Autowired
-    public UserServiceImpl(UserRepository userRepository, UploadProvider uploadProvider, StoragePlanRepository storagePlanRepository) {
+    public UserServiceImpl(UserRepository userRepository, UploadProvider uploadProvider, StoragePlanRepository storagePlanRepository, TagRepository tagRepository) {
         this.userRepository = userRepository;
         this.uploadProvider = uploadProvider;
         this.storagePlanRepository = storagePlanRepository;
+        this.tagRepository = tagRepository;
     }
 
     @Override
@@ -242,6 +247,39 @@ public class UserServiceImpl implements UserService {
                 .storageUsed(usedInBytes)
                 .storageLimit(limitInBytes)
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void savePreferredTags(UUID userId, List<Integer> tagIds) {
+        log.info("Saving preferred tags for userId: {}, tagIds: {}", userId, tagIds);
+
+        List<Integer> uniqueTagIds = tagIds.stream().distinct().collect(Collectors.toList());
+
+        // kiểm tra lặp
+        if (uniqueTagIds.size() > 3) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "You can select at most 3 tags.");
+        }
+
+        // kiểm tra public hay không
+        List<TagEntity> tags = tagRepository.findAllById(uniqueTagIds);
+        if (tags.size() != uniqueTagIds.size()) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "One or more selected tags do not exist.");
+        }
+
+        for (TagEntity tag : tags) {
+            if (tag.getVisibility() != null && tag.getVisibility() != TagVisibility.PUBLIC) {
+                throw new AppException(HttpStatus.BAD_REQUEST,
+                        "Tag '" + tag.getLabel() + "' is not a public tag.");
+            }
+        }
+
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found."));
+
+        user.setPreferredTagIds(uniqueTagIds);
+        userRepository.save(user);
+        log.info("Preferred tags saved successfully for userId: {}", userId);
     }
 
 }

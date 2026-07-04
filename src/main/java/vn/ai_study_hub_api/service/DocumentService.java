@@ -41,5 +41,7 @@ public interface DocumentService {
 
     void rejectDocument(UUID documentId, String reason);
 
+    List<DocumentResponse> getRecommendedDocuments(UUID userId);
+
     void triggerFastApiAsync(UUID documentId);
 }

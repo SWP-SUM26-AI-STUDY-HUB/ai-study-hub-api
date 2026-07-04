@@ -42,4 +42,18 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
             @Param("keyword") String keyword,
             @Param("visibility") DocumentVisibility visibility,
             @Param("status") DocumentStatus status);
+
+    @Query(value = "SELECT d.id FROM documents d " +
+            "JOIN document_tags dt ON d.id = dt.document_id " +
+            "LEFT JOIN reviews r ON d.id = r.document_id " +
+            "WHERE dt.tag_id IN (:tagIds) " +
+            "AND UPPER(d.status::text) = 'COMPLETED' " +
+            "AND UPPER(d.visibility::text) = 'PUBLIC' " +
+            "AND d.deleted_at IS NULL " +
+            "GROUP BY d.id, d.created_at " +
+            "ORDER BY COUNT(DISTINCT dt.tag_id) DESC, " +
+            "COALESCE(AVG(r.rating), 0) DESC, " +
+            "d.created_at DESC",
+            nativeQuery = true)
+    List<UUID> findRecommendedDocumentIds(@Param("tagIds") List<Integer> tagIds);
 }
