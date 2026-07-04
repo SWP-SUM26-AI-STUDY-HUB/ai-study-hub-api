@@ -240,3 +240,5 @@ ALTER TABLE "violation_histories" ADD FOREIGN KEY ("user_id") REFERENCES "users"
 ALTER TABLE "notifications" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 CREATE INDEX document_chunks_doc_id_idx ON document_chunks (document_id);
+
+ALTER TABLE "users" ADD COLUMN "preferred_tag_ids" integer[];
