@@ -137,6 +137,7 @@ public class AuthServiceImpl implements AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole())
+                .hasInterests(user.getPreferredTagIds() != null && !user.getPreferredTagIds().isEmpty())
                 .build();
     }
 
@@ -215,6 +216,7 @@ public class AuthServiceImpl implements AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole())
+                .hasInterests(user.getPreferredTagIds() != null && !user.getPreferredTagIds().isEmpty())
                 .build();
     }
 
@@ -257,6 +259,7 @@ public class AuthServiceImpl implements AuthService {
                 .email(user.getEmail())
                 .fullName(user.getFullName())
                 .role(user.getRole())
+                .hasInterests(user.getPreferredTagIds() != null && !user.getPreferredTagIds().isEmpty())
                 .build();
     }
 

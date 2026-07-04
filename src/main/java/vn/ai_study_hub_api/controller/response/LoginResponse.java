@@ -34,4 +34,7 @@ public class LoginResponse {
 
     @Schema(description = "User role in the system", example = "user")
     private UserRole role;
+
+    @Schema(description = "Whether the user has completed the interest survey", example = "false")
+    private boolean hasInterests;
 }
