@@ -67,6 +67,9 @@ public class DocumentServiceImplTest {
     @Mock
     private ReviewRepository reviewRepository;
 
+    @Mock
+    private vn.ai_study_hub_api.service.AutoModerationService autoModerationService;
+
     @InjectMocks
     private DocumentServiceImpl documentService;
 
@@ -1148,6 +1151,47 @@ public class DocumentServiceImplTest {
         assertEquals("New Description", response.getDescription());
         assertEquals("PRIVATE", response.getVisibility());
         verify(documentRepository, times(1)).save(doc);
+    }
+
+    @Test
+    void updateDocument_Success_PrivateToPublic_TriggersModeration() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Old Title")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .tags(new java.util.ArrayList<>())
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setVisibility("PUBLIC");
+
+        UserEntity admin = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("admin@example.com")
+                .fullName("Admin User")
+                .role(UserRole.ADMIN)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+        when(userRepository.findAllByRole(UserRole.ADMIN)).thenReturn(List.of(admin));
+        when(documentRepository.save(any(DocumentEntity.class))).thenReturn(doc);
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.updateDocument(docId, request, userId);
+
+        assertNotNull(response);
+        assertEquals("PUBLIC", response.getVisibility());
+        assertEquals("PENDING", response.getStatus());
+        verify(documentRepository, times(1)).save(doc);
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+        verify(autoModerationService, times(1)).moderateDocumentAsync(docId);
     }
 
     @Test

@@ -553,6 +553,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         boolean visibilityChanged = false;
         boolean needsRagProcessing = false;
+        boolean triggerModeration = false;
         DocumentVisibility oldVisibility = document.getVisibility();
         
         if (request.getVisibility() != null && !request.getVisibility().trim().isEmpty()) {
@@ -566,6 +567,7 @@ public class DocumentServiceImpl implements DocumentService {
                         // PRIVATE -> PUBLIC
                         document.setStatus(DocumentStatus.PENDING);
                         createPendingApprovalNotifications(document);
+                        triggerModeration = true;
                     } else {
                         // PUBLIC -> PRIVATE
                         if (DocumentStatus.PENDING.equals(document.getStatus()) || DocumentStatus.REJECTED.equals(document.getStatus())) {
@@ -586,6 +588,10 @@ public class DocumentServiceImpl implements DocumentService {
         if (needsRagProcessing) {
             // PUBLIC -> PRIVATE on a never-indexed doc: index it as private now.
             triggerFastApiAsync(documentId);
+        }
+        
+        if (triggerModeration) {
+            autoModerationService.moderateDocumentAsync(documentId);
         }
         // NOTE: PRIVATE -> PUBLIC intentionally does NOT call RAG here. The doc was
         // already indexed as private (chunks + embeddings exist), so moderation can
