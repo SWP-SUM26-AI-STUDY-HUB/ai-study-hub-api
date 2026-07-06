@@ -227,6 +227,24 @@ public class        DocumentController {
         return ApiResponse.success(results, "Search completed successfully.");
     }
 
+    @GetMapping("/recommendations")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get recommended documents", description = "Returns public documents matching the user's preferred tags from the onboarding survey. Sorted by tag match count, average rating, and recency.")
+    public ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> getRecommendedDocuments() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized recommendations attempt");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse> results =
+                documentService.getRecommendedDocuments(userId);
+
+        return ApiResponse.success(results, "Recommended documents retrieved successfully.");
+    }
+
     @PutMapping("/{documentId}")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Update a document", description = "Update document title, description, tags, and visibility.")

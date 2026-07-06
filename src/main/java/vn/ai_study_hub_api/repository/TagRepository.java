@@ -43,6 +43,10 @@ public interface TagRepository extends JpaRepository<TagEntity, Integer> {
     @Modifying
     @Query(value = "DELETE FROM document_tags WHERE tag_id IN :oldTagIds", nativeQuery = true)
     void deleteDocumentTagsByTagIds(@Param("oldTagIds") List<Integer> oldTagIds);
+
+    @Query("SELECT t FROM TagEntity t WHERE t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC " +
+           "OR t.visibility IS NULL ORDER BY t.label ASC")
+    List<TagEntity> findAllPublicTags();
 }
 
 

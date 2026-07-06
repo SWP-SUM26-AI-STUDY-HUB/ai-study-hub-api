@@ -241,21 +241,4 @@ ALTER TABLE "notifications" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id"
 
 CREATE INDEX document_chunks_doc_id_idx ON document_chunks (document_id);
 
-CREATE TABLE "user_followed_tags" (
-  "user_id" uuid NOT NULL,
-  "tag_id" integer NOT NULL,
-  "created_at" timestamp DEFAULT (now()),
-  PRIMARY KEY ("user_id", "tag_id"),
-  FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("tag_id") REFERENCES "tags" ("id") ON DELETE CASCADE
-);
-
-CREATE TABLE "user_follows" (
-  "follower_id" uuid NOT NULL,
-  "following_id" uuid NOT NULL,
-  "created_at" timestamp DEFAULT (now()),
-  PRIMARY KEY ("follower_id", "following_id"),
-  FOREIGN KEY ("follower_id") REFERENCES "users" ("id") ON DELETE CASCADE,
-  FOREIGN KEY ("following_id") REFERENCES "users" ("id") ON DELETE CASCADE
-);
-
+ALTER TABLE "users" ADD COLUMN "preferred_tag_ids" integer[];

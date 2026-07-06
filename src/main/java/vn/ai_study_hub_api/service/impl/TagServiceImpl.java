@@ -146,4 +146,18 @@ public class TagServiceImpl implements TagService {
                 .visibility(publicTag.getVisibility() != null ? publicTag.getVisibility() : TagVisibility.PUBLIC)
                 .build();
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TagResponse> getAllPublicTags() {
+        log.info("Fetching all public tags");
+        List<TagEntity> tags = tagRepository.findAllPublicTags();
+        return tags.stream()
+                .map(tag -> TagResponse.builder()
+                        .id(tag.getId())
+                        .label(tag.getLabel())
+                        .visibility(tag.getVisibility() != null ? tag.getVisibility() : TagVisibility.PUBLIC)
+                        .build())
+                .collect(Collectors.toList());
+    }
 }
