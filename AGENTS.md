@@ -4,7 +4,7 @@ Guide for AI assistants working in `ai-study-hub-api`. Everything below is groun
 
 ## Project Overview
 
-**AI Study Hub API** — a Spring Boot 4.0.6 / Java 17 backend for a smart study-document platform: upload/store documents, chat with an AI study assistant over document content (RAG), manage storage plans + VNPay billing, auto-moderate public documents via the OpenAI Moderation API, and handle reviews/reports. It is a stateless JSON REST API (port `8080`) backed by PostgreSQL 16 + pgvector, Redis 7, AWS S3, and an **external FastAPI RAG microservice**.
+**AI Study Hub API** — a Spring Boot 4.0.6 / Java 21 (LTS, virtual threads enabled) backend for a smart study-document platform: upload/store documents, chat with an AI study assistant over document content (RAG), manage storage plans + VNPay billing, auto-moderate public documents via the OpenAI Moderation API, and handle reviews/reports. It is a stateless JSON REST API (port `8080`) backed by PostgreSQL 16 + pgvector, Redis 7, AWS S3, and an **external FastAPI RAG microservice**.
 
 ## Architecture & Data Flow
 
@@ -29,7 +29,7 @@ Key cross-process integrations are abstracted behind interfaces:
 - **`UserSanctionService`**: tracks live tokens in `active_tokens:{userId}` so `banUser` can mass-blacklist every session.
 - **`AutoModerationService` → `AutoModerationServiceImpl`**: triages newly-extracted **PUBLIC** documents via the OpenAI Moderation API (shared `WebClient` bean, batches of <=30 chunks). Reads chunks read-only via `DocumentChunkRepository`, then drives `DocumentService.approveDocument` / `rejectDocument(id, reason)` **internally** (same Spring context — no HTTP/JWT). Three-zone triage by max category score: `>= 0.80` -> auto-reject (generated reason), `< 0.40` -> auto-approve, `0.40-0.80` -> left `PENDING` for manual admin review. `@Async("taskExecutor")`; skips (stays `PENDING`) when `openai.api-key` is empty/`mock_key` or chunks are missing/empty; any exception also leaves it `PENDING`.
 
-Async is centralized on the `taskExecutor` pool (`config/AsyncConfig`, `app.async.*`: core 5 / max 20 / queue 100 / prefix `doc-async-`) and applied to `DocumentServiceImpl` (`@Async("taskExecutor")` on `processDocumentAsync`/`triggerFastApiAsync`/`updateFastApiVisibilityAsync`/`deleteFastApiVectorsAsync`) and `AutoModerationServiceImpl` (`moderateDocumentAsync`). `EmailService` (JavaMailSender) and `PaymentService` are **synchronous**, not `@Async`.
+Async is centralized on the `taskExecutor` pool (`config/AsyncConfig`, `app.async.*`: core 5 / max 20 / queue 100 / prefix `doc-async-`) and applied to `DocumentServiceImpl` (`@Async("taskExecutor")` on `processDocumentAsync`/`triggerFastApiAsync`/`updateFastApiVisibilityAsync`/`deleteFastApiVectorsAsync`) and `AutoModerationServiceImpl` (`moderateDocumentAsync`). `EmailService` (JavaMailSender) and `PaymentService` are **synchronous**, not `@Async`. Since Java 21 the executor runs on **virtual threads** (`spring.threads.virtual.enabled: true` + `setVirtualThreads(true)`) so blocking RAG/S3 I/O never pins OS threads (Tomcat request threads are virtual too); it also does graceful shutdown (`waitForTasksToCompleteOnShutdown`, 60s) and caller-runs back-pressure on queue overflow.
 
 Data model: `User 1—N Documents`; `Document N—M Tags` (join `document_tags`); `User 1—N ChatSessions`, `ChatSession N—M Documents` (`session_documents`), `ChatSession 1—N ChatMessages`; `User N—1 StoragePlan`, `User 1—N Invoices`; `Review`/`Report` link `User`+`Document`; `User 1—N ViolationHistory`/`Notifications`. `document_chunks` (with `embedding vector(1536)` + HNSW cosine index) is **managed by the FastAPI service**, not mapped by JPA.
 
@@ -54,7 +54,7 @@ initdb.sql              full DDL: 8 native PG enums, 13 tables, pgvector ext + v
 
 ## Development Commands
 
-Java 17 + Maven (wrapper included). **There is no Node/Bun — this is a pure JVM project.**
+Java 21 + Maven (wrapper included). **There is no Node/Bun — this is a pure JVM project.**
 
 ```bash
 # Run infra only (PostgreSQL + Redis) for local dev
@@ -73,9 +73,9 @@ docker compose up --build -d
 ./mvnw clean package
 ```
 
-- **Swagger UI**: `http://localhost:8080/swagger-ui/index.html` (Actuator endpoints exposed at `/actuator/*`).
+- **Swagger UI**: `http://localhost:8080/swagger-ui/index.html`. Actuator is locked down: only `health`/`info` are exposed over HTTP, and `/actuator/**` (except `/actuator/health`) requires `ROLE_ADMIN` (see `SecurityConfig`).
 - **Profile wiring**: Maven `dev` profile (default) / `prod` set `spring.profiles.active`, injected into `application.yaml` via the `@spring.profiles.active@` resource-filtering placeholder. Both profiles use `ddl-auto: update`.
-- **CI** (`.github/workflows/workflow.yml`): deploy-only. On push to `main` it SSH-deploys to the VPS and runs `docker compose up --build -d`. There is **no CI build/test gate**; the Dockerfile builds with `-DskipTests`. Run `./mvnw test` locally before pushing.
+- **CI** (`.github/workflows/workflow.yml`): a `build-test` job runs `mvn -B clean test` on JDK 21 for every push to `main` and every PR; the `deploy` job (`needs: build-test`, main-only) SSH-deploys to the VPS and runs `docker compose up --build -d`. The Dockerfile builds with tests enabled (no `-DskipTests`), so a failing test blocks both the image build and the deploy.
 
 ## Code Conventions & Common Patterns
 
@@ -85,7 +85,8 @@ docker compose up --build -d
 
 **Authorization.** **No method-level security** (`@PreAuthorize`/`@Secured` are absent). Authz is purely path-based in `SecurityConfig`:
 - `/api/v1/admin/**` → `hasRole(ADMIN)`
-- `permitAll`: `/api/v1/auth/**`, public document search/preview/shared, GET reviews, **`/api/v1/internal/**` and `/api/internal/**`**, `/login/oauth2/**`, swagger
+- `/actuator/**` → `hasRole(ADMIN)` (except `/actuator/health`, which is `permitAll` for health probes)
+- `permitAll`: `/api/v1/auth/**`, public document search/preview/shared, GET reviews, **`/api/v1/internal/**` and `/api/internal/**`**, `/actuator/health`, `/login/oauth2/**`, swagger
 - everything else → authenticated
 
 `admin` vs `user` vs `internal` is separated **only by URL prefix**. The internal FastAPI callback (`/api/v1/internal/documents/callback`) is `permitAll` and instead guarded manually by comparing the `X-Internal-Secret` header to `${app.internal.secret}` (403 on mismatch).
@@ -98,7 +99,7 @@ docker compose up --build -d
 - **ID strategies split**: `@GeneratedValue(strategy = GenerationType.UUID)` (DB-assigned) for `UserEntity`, `InvoiceEntity`, `ReviewEntity`, `ReportEntity`, `ViolationHistoryEntity`, `NotificationEntity`; **app-assigned UUID** with `Persistable<UUID>` + a `@Transient isNew` flag reset in `@PostPersist/@PostLoad` for `DocumentEntity`, `ChatSessionEntity`, `ChatMessageEntity`; `GenerationType.IDENTITY` (Integer PK) for `StoragePlanEntity` + `TagEntity`.
 - **Enums** use `@Enumerated(EnumType.STRING)` + Hibernate `@ColumnTransformer` to bridge Java UPPER-case names to lowercase native PG enum literals (`read="UPPER(status::text)"`, `write="cast(LOWER(?) as <pg_enum>)"`).
 - **JSONB**: `ChatMessageEntity.citations` is `@JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition = "jsonb")` typed as `String`.
-- **Audit cols** `createdAt`/`updatedAt` are `insertable=false, updatable=false` and rely on DB `DEFAULT now()`; there is no `@UpdateTimestamp`/trigger, so `updated_at` is effectively insert-time only.
+- **Audit cols**: `createdAt` stays `insertable=false, updatable=false` (DB `DEFAULT now()`); `updatedAt` is now Hibernate-managed via `@UpdateTimestamp` (`@Column(name="updated_at")`), so it auto-refreshes on every flush — previously insert-time only. Applied to all entities that carry `updated_at` (`User`, `Document`, `ChatSession`, `Invoice`, `Review`, `Report`, `StoragePlan`).
 - Relationships are `@ManyToOne(LAZY)`; M:N via join tables; no JPA `cascade` (only SQL-level `ON DELETE CASCADE`).
 
 **Repositories.** Extend `JpaRepository`. Custom queries mix JPQL (`@Query`) and native SQL. Projections: DTO constructor-expression (`new ...ReportedDocumentResponse(...)`) and Spring Data interface projection (`TrendingStatsProjection`). Pagination via `Page<>` + `PageRequest.of(page, size)` (defaults 0/10).
@@ -118,7 +119,10 @@ docker compose up --build -d
 | `security/JwtTokenProvider.java` | jjwt HMAC tokens: access 1h (`app.jwt.access-expiration-ms`=3600000), refresh 7d |
 | `security/JwtAuthenticationFilter.java` | Bearer validation + Redis blacklist check + user load |
 | `service/impl/AuthServiceImpl.java` | Login (issue + store refresh), rotate-on-refresh, logout blacklist |
-| `service/impl/DocumentServiceImpl.java` | Core upload/processing state machine, `@Async` FastAPI orchestration, and the `EXTRACTED` callback that fires auto-moderation |
+| `service/impl/DocumentServiceImpl.java` | Core document business orchestrator (upload validation, upload→extract/index state machine, owner/admin lifecycle mutations, read queries). Preview rendering, RAG HTTP, and entity→response mapping are delegated to the 3 collaborators below (SRP split of the former ~1177-line god class). |
+| `service/impl/DocumentPreviewGenerator.java` | Truncated preview generation (PDF/DOCX/TXT ~30%) + preview-path helper. No DB deps. |
+| `service/impl/DocumentRagClient.java` | Thin blocking `WebClient` client for every FastAPI RAG call (`/process`, `/extract`, `/index`, `/visibility`, `/documents/{id}`). Propagates errors; the @Async orchestrator owns status transitions. |
+| `service/impl/DocumentMapper.java` | `DocumentEntity`→`DocumentResponse` projection + per-viewer tag visibility. Replaces 5 duplicated inline mapping blocks. |
 | `service/impl/AutoModerationServiceImpl.java` | OpenAI Moderation API triage of public docs (auto-approve / auto-reject / leave PENDING); `@Async`; reads chunks read-only, drives `DocumentService.approve/reject` internally |
 | `service/impl/ChatServiceImpl.java` | Chat sessions, AI-quota enforcement, multi-turn `history` construction (last 10 `chat_messages` → RAG), citation extraction from RAG JSON |
 | `service/impl/RedisTokenServiceImpl.java` | Redis keys: `refresh_token:`, `blacklist_token:`, `otp:` |
@@ -127,11 +131,11 @@ docker compose up --build -d
 | `common/ApiResponse.java` | Universal response envelope |
 | `exception/GlobalExceptionHandler.java` | Centralized error mapping → `ApiResponse.error` |
 | `exception/AppException.java` | The one custom exception (`HttpStatus` + message) |
-| `src/main/resources/application.yaml` | Base config + all `${ENV:default}` placeholders |
+| `src/main/resources/application.yaml` | Base config + `${ENV}` placeholders. **No secret defaults** — `JWT_SECRET`, `INTERNAL_API_SECRET`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` fail fast if unset. Actuator exposes only `health`/`info`. |
 | `initdb.sql` | Full DDL (8 enums, 13 tables, pgvector `vector(1536)` HNSW cosine index) |
 | `pom.xml` | Maven build, `dev`/`prod` profiles, dependency versions |
 
-**Externalized config groups** (`application.yaml`): `aws.s3.*`, `openai.*` (`api-key`, `moderation-url`), `fastapi.*` (`base-url`, `rag-process-url`, `rag-chat-url`, `chat-timeout-seconds:30`), `app.jwt.*`, `app.internal.secret`, `app.async.*`, `app.upload.max-file-size-bytes` (50MB), `app.share-url-prefix`, `vnpay.*`, `spring.security.oauth2.client` (Google), `spring.mail.*`.
+**Externalized config groups** (`application.yaml`): `aws.s3.*`, `openai.*` (`api-key`, `moderation-url`), `fastapi.*` (`base-url`, `rag-process-url`, `rag-chat-url`, `chat-timeout-seconds:30`), `app.jwt.*`, `app.internal.secret`, `app.async.*`, `app.upload.max-file-size-bytes` (50MB), `app.share-url-prefix`, `vnpay.*`, `spring.security.oauth2.client` (Google), `spring.mail.*`. Secrets (`JWT_SECRET`, `INTERNAL_API_SECRET`, `AWS_*`, `OPENAI_API_KEY`, `VNPAY_*`) come **only** from env (no hardcoded fallback). `spring.threads.virtual.enabled: true` enables Java 21 virtual threads.
 
 ## Sibling Service: RAG Pipeline (FastAPI)
 
@@ -206,7 +210,7 @@ Hybrid search: **BM25** (over parent docs, filtered to the requested `document_i
 
 ## Runtime / Tooling Preferences
 
-- **Runtime**: Java 17 (JDK 17). No JavaScript runtime is involved.
+- **Runtime**: Java 21 (JDK 21 LTS) — virtual threads power Tomcat request threads + the `@Async` `taskExecutor`. No JavaScript runtime is involved.
 - **Build tool**: Maven via the `mvnw` wrapper (note: `mvnw` is gitignored; use a locally installed `mvn` if the wrapper is absent — `mvnw.cmd` exists for Windows).
 - **Package manager**: Maven (there is no npm/yarn/pnpm/bun).
 - **`dev` is the default-active profile** — running plain `./mvnw spring-boot:run` uses `dev`.
@@ -221,4 +225,4 @@ Hybrid search: **BM25** (over parent docs, filtered to the requested `document_i
 - **Assertions**: JUnit5 `Assertions.*` only — AssertJ is on the classpath but unused.
 - **Naming**: classes `*Test`; packages mirror `main`. Method naming is inconsistent across files (`method_scenario_expectation` in services, `_Success` in controllers, `testDeserialize*` in the DTO test) — match the file you're editing.
 - **Run**: `./mvnw clean test`. No extra infra required.
-- **Coverage**: 10 of 17 service impls are tested (`AiQuota`, `Chat`, `User`, `Report`, `Document`, `Tag`, `AdminStats`, `Auth`, `S3UploadProvider`, `AutoModeration`). **Untested**: `PaymentServiceImpl`, `ReviewServiceImpl`, `TrendingDocumentServiceImpl`, `RedisTokenServiceImpl`, `ChatbotClientImpl`, `UserSanctionServiceImpl`, `GoogleOAuth2UserServiceImpl`. Only `AdminReportController` & `AdminStatsController` have controller tests; the security filter chain is untested. Prefer the existing Mockito-unit style when adding tests.
+- **Coverage**: 129 unit tests across 17 classes (`AiQuota`, `Chat`, `User`, `Report`, `Document` + extracted `DocumentPreviewGenerator`/`DocumentRagClient`/`DocumentMapper`, `Tag`, `AdminStats`, `Auth`, `S3UploadProvider`, `AutoModeration`, `Payment`, controller + DTO tests). **Untested service impls**: `ReviewServiceImpl`, `TrendingDocumentServiceImpl`, `RedisTokenServiceImpl`, `ChatbotClientImpl`, `UserSanctionServiceImpl`, `GoogleOAuth2UserServiceImpl`. The security filter chain remains untested. **CI now gates deploys on `mvn test`** (`build-test` job). Prefer the existing Mockito-unit style when adding tests.

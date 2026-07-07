@@ -5,13 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.reactive.function.client.WebClient;
 import vn.ai_study_hub_api.exception.AppException;
-import reactor.core.publisher.Mono;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -59,8 +57,10 @@ public class DocumentServiceImplTest {
     private UploadProvider uploadProvider;
 
     @Mock
-    private WebClient webClient;
+    private DocumentRagClient ragClient;
 
+    @Mock
+    private DocumentPreviewGenerator previewGenerator;
     @Mock
     private StoragePlanRepository storagePlanRepository;
 
@@ -69,6 +69,11 @@ public class DocumentServiceImplTest {
 
     @Mock
     private vn.ai_study_hub_api.service.AutoModerationService autoModerationService;
+
+    // Spied real instance: @InjectMocks injects it into the constructor AND real
+    // mapping logic runs (so query tests still assert actual projection behavior).
+    @Spy
+    private DocumentMapper documentMapper = new DocumentMapper();
 
     @InjectMocks
     private DocumentServiceImpl documentService;
@@ -85,7 +90,6 @@ public class DocumentServiceImplTest {
         documentId = UUID.randomUUID();
 
         // Inject the Value annotation values since MockitoExtension won't inject them
-        org.springframework.test.util.ReflectionTestUtils.setField(documentService, "fastApiUrl", "http://localhost:8000/api");
         org.springframework.test.util.ReflectionTestUtils.setField(documentService, "maxFileSizeBytes", 52428800L);
 
         mockUser = UserEntity.builder()
@@ -189,18 +193,6 @@ public class DocumentServiceImplTest {
         when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
         when(uploadProvider.generatePresignedUrl(storagePath)).thenReturn("https://presigned.url/test.pdf");
 
-        // Mock WebClient call
-        WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
-        WebClient.RequestBodySpec requestBodySpec = mock(WebClient.RequestBodySpec.class);
-        WebClient.RequestHeadersSpec requestHeadersSpec = mock(WebClient.RequestHeadersSpec.class);
-        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-
-        when(webClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
-        when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
 
         documentService.processDocumentAsync(documentId, tempFile, storagePath, contentType);
 
@@ -208,7 +200,7 @@ public class DocumentServiceImplTest {
         verify(uploadProvider, times(1)).generatePresignedUrl(storagePath);
         verify(documentRepository, times(1)).save(any(DocumentEntity.class));
         verify(userRepository, times(1)).save(mockUser);
-        verify(webClient, times(1)).post();
+        verify(ragClient, times(1)).triggerProcess(eq(documentId), anyString());
         assertEquals(100L, mockUser.getStorageUsed());
         assertEquals(DocumentStatus.PROCESSING, mockDocument.getStatus());
         verify(tempFile, times(1)).delete();
@@ -1035,19 +1027,6 @@ public class DocumentServiceImplTest {
         when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
 
-        // Mock WebClient call
-        WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
-        WebClient.RequestBodySpec requestBodySpec = mock(WebClient.RequestBodySpec.class);
-        WebClient.RequestHeadersSpec requestHeadersSpec = mock(WebClient.RequestHeadersSpec.class);
-        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-
-        when(webClient.post()).thenReturn(requestBodyUriSpec);
-        when(webClient.patch()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
-        when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
 
         documentService.approveDocument(documentId);
 
