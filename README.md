@@ -1,12 +1,12 @@
 # AI Study Hub API
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.6-brightgreen?style=for-the-badge&logo=springboot)](https://spring.io/projects/spring-boot)
-[![Java](https://img.shields.io/badge/Java-17-orange?style=for-the-badge&logo=openjdk)](https://www.oracle.com/java/)
+[![Java](https://img.shields.io/badge/Java-21-orange?style=for-the-badge&logo=openjdk)](https://www.oracle.com/java/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=for-the-badge&logo=postgresql)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-red?style=for-the-badge&logo=redis)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Enabled-blue?style=for-the-badge&logo=docker)](https://www.docker.com/)
 
-**AI Study Hub API** is a powerful and modern Backend API system built on the **Spring Boot 4.0.6** ecosystem and **Java 17**. The project provides a smart learning document storage solution integrated with an AI virtual assistant to interact directly with document content, manage storage plans, invoices, and an advanced content moderation system.
+**AI Study Hub API** is a powerful and modern Backend API system built on the **Spring Boot 4.0.6** ecosystem and **Java 21 (LTS, virtual threads enabled)**. The project provides a smart learning document storage solution integrated with an AI virtual assistant to interact directly with document content, manage storage plans, invoices, and an advanced content moderation system.
 
 ---
 
@@ -19,19 +19,21 @@
 - **Google OAuth2**: Supports quick login via Google accounts.
 
 ### 2. Smart Document Management
-- **Upload & Document Processing**: Supports multiple formats with real-time status updates (`uploading`, `processing`, `pending`, `private`, `public`, `failed`).
+- **Upload & Document Processing**: Secure document storage via AWS S3 using presigned URLs. Supports multiple formats with real-time status updates (`uploading`, `processing`, `pending`, `private`, `public`, `failed`).
 - **Tag-based Categorization**: Smart tagging helps users easily search and organize their study materials.
 - **Document Sharing**: A flexible document sharing mechanism via secure unique URLs.
 
 ### 3. AI Study Assistant
 - **Context-aware Document Chat**: Users can create chat sessions (`chat_sessions`) linked to one or more study documents (`session_documents`).
+- **FastAPI RAG Microservice**: Powered by an external Python/FastAPI service using LangChain, Google Gemini, and pgvector for advanced hybrid search (BM25 + dense vector) and deterministic routing.
 - **Accurate Responses with Citations**: The AI responds to questions directly based on the knowledge from selected documents and provides specific source citations as a JSONB structure.
 
 ### 4. Storage Plans & Billing
 - **Subscription-based Plans**: A flexible configuration system for storage plans (`storage_plans`) that includes maximum storage limits and daily AI request quotas.
-- **Invoicing System**: Integrated clear transaction history with payment statuses (`pending`, `success`, `failed`).
+- **Invoicing & VNPay**: Integrated clear transaction history with payment statuses (`pending`, `success`, `failed`) and VNPay billing support.
 
 ### 5. Moderation & Community
+- **Auto-Moderation**: Triages public documents via the OpenAI Moderation API, executed durably on a Redis Streams consumer queue (`stream:moderation`).
 - **Reviews & Ratings**: Allows users to rate documents with a score along with detailed comments.
 - **Report System**: Users can report violating documents. Administrators (Admin) have moderation tools and can log violation history (`violation_histories`).
 - **Limit Management**: Automatically transitions user status to `overlimitstorage` when they exceed their plan limits.
@@ -41,9 +43,11 @@
 ## Tech Stack & Technologies
 
 - **Core Framework**: Spring Boot 4.0.6, Spring WebMVC, Spring Data JPA, Spring Security
-- **Language**: Java 17
-- **Database**: PostgreSQL 16 (Supports JSONB, Enums, and Auto Identity)
-- **Cache & Session**: Redis 7 (Stores and rotates Refresh Tokens, manages logout blacklist)
+- **Language**: Java 21 (LTS, virtual threads enabled)
+- **Database**: PostgreSQL 16 + pgvector (Supports JSONB, Enums, and Auto Identity)
+- **Cache & Session**: Redis 7 (Stores and rotates Refresh Tokens, manages logout blacklist, Redis Streams for auto-moderation)
+- **External Services**: AWS S3 (Storage), VNPay (Billing), OpenAI API (Moderation)
+- **RAG Microservice**: External Python 3.11 service (FastAPI, LangChain, Google Gemini)
 - **API Documentation**: Springdoc OpenAPI / Swagger UI 3.0.2
 - **Utilities**: Project Lombok (Automatically generates boilerplate code)
 - **Containerization**: Docker & Docker Compose
@@ -55,11 +59,12 @@
 ```text
 ai-study-hub-api/
 ├── .github/                  # CI/CD automation workflows
+├── documents/                # BRD, functional requirements, RAG tutorial, etc.
 ├── src/
 │   ├── main/
 │   │   ├── java/vn/ai_study_hub_api/
 │   │   │   ├── common/       # Global shared objects (ApiResponse, ...)
-│   │   │   ├── config/       # OpenApi, WebMvc, CORS configurations...
+│   │   │   ├── config/       # OpenApi, WebMvc, CORS configurations, Redis Streams...
 │   │   │   ├── controller/   # Controller layer handling RESTful APIs and Request/Response DTOs
 │   │   │   ├── exception/    # Centralized exception handling (Global Exception Handler & AppException)
 │   │   │   ├── model/        # JPA Database Entities (UserEntity, UserRole, UserStatus, ...)
@@ -73,7 +78,7 @@ ai-study-hub-api/
 │   │       ├── application-prod.yaml  # Production environment configuration
 │   │       ├── templates/
 │   │       └── static/
-│   └── test/                 # Contains Unit Tests & Integration Tests (Services & Controllers)
+│   └── test/                 # Contains pure Unit Tests (JUnit 5 + Mockito)
 ├── Dockerfile                # Configures packaging the application into a Docker Image (Multi-stage build)
 ├── docker-compose.yaml       # Defines Docker run environments (PostgreSQL, Redis, API Service)
 ├── initdb.sql                # Initial database schema setup file for PostgreSQL
@@ -88,7 +93,7 @@ ai-study-hub-api/
 
 ### 1. Environment Prerequisites
 - **Docker** & **Docker Compose** installed.
-- **Java 17** and **Maven** installed (if you wish to run locally without Docker).
+- **Java 21** and **Maven** installed (if you wish to run locally without Docker).
 
 ### 2. Configure Environment Variables
 Create a `.env` file at the root directory of the project (template available in the sample `.env` file):
@@ -110,7 +115,7 @@ JWT_SECRET=YourSuperLongAndSecureJwtSecretKeyHere
 ### 3. Run the entire application using Docker Compose (Recommended)
 At the root directory of the project, run the following command to automatically pull and launch the database, Redis, and Backend API service:
 ```bash
-docker-compose up --build -d
+docker compose up --build -d
 ```
 This command will:
 - Spin up **PostgreSQL** on port `5432` and automatically import the `initdb.sql` file.
@@ -121,7 +126,7 @@ This command will:
 If you want to run Spring Boot locally for quick debugging:
 1. Ensure you have started the database and Redis services via Docker:
    ```bash
-   docker-compose up -d postgres redis
+   docker compose up -d postgres redis
    ```
 2. Run the Spring Boot application using the Maven wrapper:
    ```bash
@@ -173,7 +178,7 @@ Once the application is running successfully, you can access the following link 
 
 ## Running Tests
 
-The project comes pre-configured with a suite of unit tests for core services (such as `UserService`, `AuthService`). To run the entire test suite, execute:
+The project uses a pure unit testing approach with **JUnit 5 + Mockito** (no Spring context or test database required). The CI pipeline gates deployments on these tests passing. To run the entire test suite, execute:
 ```bash
 ./mvnw clean test
 ```
