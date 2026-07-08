@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import vn.ai_study_hub_api.common.ApiResponse;
 import java.util.HashMap;
 import java.util.Map;
@@ -76,6 +77,17 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
         ApiResponse<Void> response = ApiResponse.error("Uploaded file size exceeds the maximum allowed limit. Please choose another file");
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Handle requests whose HTTP method is not supported by the matched handler.
+     * Returns 405 instead of letting the catch-all 500 handler mask it, so clients
+     * get an accurate status (e.g. a GET on a PUT/DELETE-only path).
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        ApiResponse<Void> response = ApiResponse.error("Request method '" + ex.getMethod() + "' is not supported for this endpoint.");
+        return new ResponseEntity<>(response, HttpStatus.METHOD_NOT_ALLOWED);
     }
 
     /**

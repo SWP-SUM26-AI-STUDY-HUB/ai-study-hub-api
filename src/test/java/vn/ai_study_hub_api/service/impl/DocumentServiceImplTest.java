@@ -808,6 +808,137 @@ public class DocumentServiceImplTest {
     }
 
     @Test
+    void getDocumentById_NotFound_Throws404() {
+        UUID docId = UUID.randomUUID();
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, null)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getDocumentById_Deleted_Throws404() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.DELETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .deletedAt(java.time.LocalDateTime.now())
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, null)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getDocumentById_PublicCompleted_GuestSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.getDocumentById(docId, null);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getId());
+        assertEquals("Public Doc", response.getTitle());
+        assertEquals("PUBLIC", response.getVisibility());
+    }
+
+    @Test
+    void getDocumentById_Private_OwnerSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                userId,
+                "owner@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.getDocumentById(docId, ownerDetails);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getId());
+        assertEquals("Private Doc", response.getTitle());
+        assertEquals("PRIVATE", response.getVisibility());
+    }
+
+    @Test
+    void getDocumentById_Private_NonOwnerForbidden() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "other@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, otherUserDetails)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+    }
+
+    @Test
+    void getDocumentById_Private_GuestUnauthorized() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, null)
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
+    }
+
+    @Test
     void getDownloadAccess_GuestUnauthorized() {
         UUID docId = UUID.randomUUID();
         AppException exception = assertThrows(AppException.class, () ->

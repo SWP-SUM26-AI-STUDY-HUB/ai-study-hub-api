@@ -288,6 +288,26 @@ public class        DocumentController {
         return ApiResponse.success("Document deleted successfully");
     }
 
+    @GetMapping("/{documentId}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get document details", description = "Retrieves a document's metadata. The owner sees full details (including private tags); other users only see public, completed documents.")
+    public ApiResponse<vn.ai_study_hub_api.controller.response.DocumentResponse> getDocument(
+            @Parameter(description = "Document UUID", required = true) @PathVariable("documentId") UUID documentId) {
+
+        log.info("Request to get document details ID: {}", documentId);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        CustomUserDetails userDetails = null;
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            userDetails = (CustomUserDetails) authentication.getPrincipal();
+        }
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response = documentService.getDocumentById(documentId, userDetails);
+        return ApiResponse.success(response, "Document retrieved successfully");
+    }
+
     @GetMapping("/{id}/preview")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Get document preview url", description = "Generates a temporary presigned S3 URL for viewing the document. Guests can access it if the document is public and completed.")

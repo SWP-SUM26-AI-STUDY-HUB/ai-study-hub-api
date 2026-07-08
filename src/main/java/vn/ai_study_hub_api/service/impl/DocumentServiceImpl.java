@@ -558,6 +558,37 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
+    public DocumentResponse getDocumentById(UUID documentId, CustomUserDetails userDetails) {
+        log.info("Getting document details ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
+
+        DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() != null || DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
+        }
+
+        boolean hasAccess;
+        if (DocumentVisibility.PUBLIC.equals(document.getVisibility()) && DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            hasAccess = true;
+        } else if (userDetails != null) {
+            boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(userDetails.getId());
+            boolean isAdmin = userDetails.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+            hasAccess = isOwner || isAdmin;
+        } else {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+
+        if (!hasAccess) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
+        }
+
+        return documentMapper.toResponse(document);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public DocumentAccessResponse getDownloadAccess(UUID documentId, CustomUserDetails userDetails) {
         log.info("Getting download access for document ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
 
