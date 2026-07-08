@@ -325,4 +325,61 @@ public class        DocumentController {
         vn.ai_study_hub_api.controller.response.DocumentAccessResponse response = documentService.getDownloadAccess(id, userDetails);
         return ApiResponse.success(response, "Document download access generated successfully");
     }
+
+    @PostMapping("/{documentId}/save")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Save a document to user's saved library", description = "Saves a public completed document to the user's personal saved library.")
+    public ApiResponse<Void> saveDocument(@PathVariable("documentId") UUID documentId) {
+        log.info("Request to save document ID: {}", documentId);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        documentService.saveDocument(documentId, userDetails.getId());
+        return ApiResponse.success("Document saved successfully");
+    }
+
+    @DeleteMapping("/{documentId}/unsave")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Remove a saved document from library", description = "Removes a bookmarked document from the user's library.")
+    public ApiResponse<Void> unsaveDocument(@PathVariable("documentId") UUID documentId) {
+        log.info("Request to unsave document ID: {}", documentId);
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        documentService.unsaveDocument(documentId, userDetails.getId());
+        return ApiResponse.success("Document unsaved successfully");
+    }
+
+    @GetMapping("/saved")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get list of saved documents", description = "Returns a paginated list of documents saved by the user.")
+    public ApiResponse<org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse>> getSavedDocuments(
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse> response = 
+                documentService.getSavedDocuments(userDetails.getId(), page, size);
+        return ApiResponse.success(response, "Saved documents retrieved successfully");
+    }
+
+    @GetMapping("/user/{userId}")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get public documents of a specific author", description = "Returns a paginated list of public, completed documents uploaded by the given user ID. Accessible publicly.")
+    public ApiResponse<org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse>> getPublicDocumentsByUser(
+            @PathVariable("userId") UUID userId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
+        org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse> response = 
+                documentService.getPublicDocumentsByUser(userId, page, size);
+        return ApiResponse.success(response, "Author's public documents retrieved successfully");
+    }
 }
+
