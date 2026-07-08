@@ -3,21 +3,26 @@ package vn.ai_study_hub_api.service.impl;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import vn.ai_study_hub_api.controller.response.TagResponse;
 import vn.ai_study_hub_api.controller.response.TrendingDocumentResponse;
-import vn.ai_study_hub_api.controller.response.UploaderResponse;
+import vn.ai_study_hub_api.controller.response.TrendingPage;
 import vn.ai_study_hub_api.model.DocumentEntity;
+import vn.ai_study_hub_api.model.TagVisibility;
 import vn.ai_study_hub_api.repository.TrendingDocumentRepository;
-import vn.ai_study_hub_api.repository.projection.TrendingStatsProjection;
 import vn.ai_study_hub_api.service.TrendingDocumentService;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +30,7 @@ import java.util.stream.Collectors;
 public class TrendingDocumentServiceImpl implements TrendingDocumentService {
 
     private final TrendingDocumentRepository trendingDocumentRepository;
+    private final TrendingDocumentCacheLoader trendingDocumentCacheLoader;
 
     private UUID getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -36,66 +42,77 @@ public class TrendingDocumentServiceImpl implements TrendingDocumentService {
         return null;
     }
 
+    /**
+     * Serves the trending page from Redis (via {@link TrendingDocumentCacheLoader}) and then layers
+     * the current viewer's own PRIVATE tags on top for documents they own. The cached payload is
+     * identical for every viewer (PUBLIC tags only), so a single cache entry per page serves all
+     * traffic; the owner enrichment is a cheap, request-scoped touch-up that preserves the original
+     * "owners see all their tags" behavior without leaking private tags across users.
+     */
     @Override
+    @Transactional(readOnly = true)
     public Page<TrendingDocumentResponse> getTrendingDocuments(Pageable pageable) {
-        Page<DocumentEntity> documentsPage = trendingDocumentRepository.findTrendingDocuments(pageable);
-        List<DocumentEntity> documents = documentsPage.getContent();
+        TrendingPage cached = trendingDocumentCacheLoader.loadTrendingPage(pageable);
 
-        if (documents.isEmpty()) {
+        List<TrendingDocumentResponse> content = cached.getContent();
+        if (content == null || content.isEmpty()) {
             return Page.empty(pageable);
         }
 
-        List<UUID> docIds = documents.stream().map(DocumentEntity::getId).collect(Collectors.toList());
-        List<TrendingStatsProjection> statsList = trendingDocumentRepository.findStatsForDocuments(docIds);
-        Map<UUID, TrendingStatsProjection> statsMap = statsList.stream()
-                .collect(Collectors.toMap(TrendingStatsProjection::getDocumentId, stats -> stats));
+        enrichPrivateTagsForOwner(content);
 
-        List<TrendingDocumentResponse> content = documents.stream().map(doc -> {
-            TrendingStatsProjection stats = statsMap.get(doc.getId());
-            Double avgRating = stats != null ? stats.getAverageRating() : 0.0;
-            Long reviewCount = stats != null ? stats.getReviewCount() : 0L;
+        return new PageImpl<>(
+                content,
+                PageRequest.of(cached.getPageNumber(), cached.getPageSize()),
+                cached.getTotalElements());
+    }
 
-            UploaderResponse uploaderResponse = null;
-            if (doc.getUploader() != null) {
-                uploaderResponse = UploaderResponse.builder()
-                        .id(doc.getUploader().getId())
-                        .fullName(doc.getUploader().getFullName())
-                        .avatarUrl(doc.getUploader().getAvatarUrl())
-                        .build();
+    /**
+     * For the docs on this page that the current user owns, replace the shared PUBLIC-only tag list
+     * with their full tag set (public + private). No-op for guests and non-owners — the common case.
+     */
+    private void enrichPrivateTagsForOwner(List<TrendingDocumentResponse> content) {
+        UUID currentUserId = getCurrentUserId();
+        if (currentUserId == null) {
+            return;
+        }
+
+        List<UUID> docIds = content.stream()
+                .map(TrendingDocumentResponse::getId)
+                .collect(Collectors.toList());
+
+        List<DocumentEntity> ownedDocs =
+                trendingDocumentRepository.findOwnedDocumentsWithTags(docIds, currentUserId);
+        if (ownedDocs.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, List<TagResponse>> fullTagsByDoc = ownedDocs.stream()
+                .collect(Collectors.toMap(
+                        DocumentEntity::getId,
+                        this::mapAllTags,
+                        (a, b) -> a));
+
+        for (TrendingDocumentResponse response : content) {
+            List<TagResponse> fullTags = fullTagsByDoc.get(response.getId());
+            if (fullTags != null) {
+                response.setTags(fullTags);
             }
+        }
+    }
 
-            List<TagResponse> tagResponses = Collections.emptyList();
-            if (doc.getTags() != null) {
-                UUID currentUserId = getCurrentUserId();
-                boolean isOwner = doc.getUploader() != null && doc.getUploader().getId().equals(currentUserId);
-                tagResponses = doc.getTags().stream()
-                        .filter(t -> isOwner 
-                                || t.getVisibility() == null 
-                                || vn.ai_study_hub_api.model.TagVisibility.PUBLIC.equals(t.getVisibility()))
-                        .map(tag -> TagResponse.builder()
-                                .id(tag.getId())
-                                .label(tag.getLabel())
-                                .visibility(tag.getVisibility() != null ? tag.getVisibility() : vn.ai_study_hub_api.model.TagVisibility.PUBLIC)
-                                .build()
-                        ).collect(Collectors.toList());
-            }
-
-            return TrendingDocumentResponse.builder()
-                    .id(doc.getId())
-                    .title(doc.getTitle())
-                    .description(doc.getDescription())
-                    .summary(doc.getSummary())
-                    .fileUrl(doc.getFileUrl())
-                    .fileType(doc.getFileType())
-                    .fileSizeBytes(doc.getFileSizeBytes())
-                    .createdAt(doc.getCreatedAt())
-                    .uploader(uploaderResponse)
-                    .tags(tagResponses)
-                    .averageRating(avgRating)
-                    .reviewCount(reviewCount)
-                    .build();
-        }).collect(Collectors.toList());
-
-        return new PageImpl<>(content, pageable, documentsPage.getTotalElements());
+    /** Owner sees every tag (public + private); visibility defaults to PUBLIC when null (legacy). */
+    private List<TagResponse> mapAllTags(DocumentEntity doc) {
+        if (doc.getTags() == null) {
+            return Collections.emptyList();
+        }
+        return doc.getTags().stream()
+                .map(tag -> TagResponse.builder()
+                        .id(tag.getId())
+                        .label(tag.getLabel())
+                        .visibility(tag.getVisibility() != null
+                                ? tag.getVisibility() : TagVisibility.PUBLIC)
+                        .build())
+                .collect(Collectors.toList());
     }
 }

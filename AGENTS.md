@@ -4,7 +4,7 @@ Guide for AI assistants working in `ai-study-hub-api`. Everything below is groun
 
 ## Project Overview
 
-**AI Study Hub API** — a Spring Boot 4.0.6 / Java 17 backend for a smart study-document platform: upload/store documents, chat with an AI study assistant over document content (RAG), manage storage plans + VNPay billing, and moderate via reviews/reports. It is a stateless JSON REST API (port `8080`) backed by PostgreSQL 16 + pgvector, Redis 7, AWS S3, and an **external FastAPI RAG microservice**.
+**AI Study Hub API** — a Spring Boot 4.0.6 / Java 21 (LTS, virtual threads enabled) backend for a smart study-document platform: upload/store documents, chat with an AI study assistant over document content (RAG), manage storage plans + VNPay billing, auto-moderate public documents via the OpenAI Moderation API, and handle reviews/reports. It is a stateless JSON REST API (port `8080`) backed by PostgreSQL 16 + pgvector, Redis 7, AWS S3, and an **external FastAPI RAG microservice**.
 
 ## Architecture & Data Flow
 
@@ -27,8 +27,9 @@ Key cross-process integrations are abstracted behind interfaces:
 - **`AiQuotaService`**: Redis-backed daily per-user AI request counter (`user:ai_limit:{userId}:{date}`); throws HTTP 429 on overflow.
 - **`RedisTokenService`**: refresh-token storage/rotation + access-token blacklist + OTP (`refresh_token:`, `blacklist_token:`, `otp:` keys).
 - **`UserSanctionService`**: tracks live tokens in `active_tokens:{userId}` so `banUser` can mass-blacklist every session.
+- **`AutoModerationService` → `AutoModerationServiceImpl`**: triages **PUBLIC** documents via the OpenAI Moderation API (shared `WebClient` bean, batches of <=30 chunks). Reads chunks read-only via `DocumentChunkRepository`, then drives `DocumentService.approveDocument` / `rejectDocument(id, reason)` **internally** (same Spring context — no HTTP/JWT). Three-zone triage by max category score: `>= 0.80` -> auto-reject (generated reason), `< 0.40` -> auto-approve, `0.40-0.80` -> left `PENDING` for manual admin review. **Execution is a Redis Streams consumer** (`stream:moderation`), not `@Async` — see "Redis Streams (moderation)" below. Skips (stays `PENDING`) when `openai.api-key` is empty/`mock_key` or chunks are missing/empty; transient failures propagate (message left unacked → retried, then DLQ'd after `app.moderation.max-attempts`).
 
-Async is centralized on the `taskExecutor` pool (`config/AsyncConfig`, `app.async.*`: core 5 / max 20 / queue 100 / prefix `doc-async-`) and applied **only** to `DocumentServiceImpl` (`@Async("taskExecutor")` on `processDocumentAsync`/`triggerFastApiAsync`/`updateFastApiVisibilityAsync`/`deleteFastApiVectorsAsync`). `EmailService` (JavaMailSender) and `PaymentService` are **synchronous**, not `@Async`.
+Async is centralized on the `taskExecutor` pool (`config/AsyncConfig`, `app.async.*`: core 5 / max 20 / queue 100 / prefix `doc-async-`) and applied to `DocumentServiceImpl` (`@Async("taskExecutor")` on `processDocumentAsync`/`triggerFastApiAsync`/`updateFastApiVisibilityAsync`/`deleteFastApiVectorsAsync`). **Auto-moderation is NOT `@Async` anymore** — it runs on the `stream:moderation` consumer (see "Redis Streams (moderation)" below). `EmailService` (JavaMailSender) and `PaymentService` are **synchronous**, not `@Async`. Since Java 21 the executor runs on **virtual threads** (`spring.threads.virtual.enabled: true` + `setVirtualThreads(true)`) so blocking RAG/S3 I/O never pins OS threads (Tomcat request threads are virtual too); it also does graceful shutdown (`waitForTasksToCompleteOnShutdown`, 60s) and caller-runs back-pressure on queue overflow.
 
 Data model: `User 1—N Documents`; `Document N—M Tags` (join `document_tags`); `User 1—N ChatSessions`, `ChatSession N—M Documents` (`session_documents`), `ChatSession 1—N ChatMessages`; `User N—1 StoragePlan`, `User 1—N Invoices`; `Review`/`Report` link `User`+`Document`; `User 1—N ViolationHistory`/`Notifications`. `document_chunks` (with `embedding vector(1536)` + HNSW cosine index) is **managed by the FastAPI service**, not mapped by JPA.
 
@@ -41,7 +42,7 @@ src/main/java/vn/ai_study_hub_api/
 ├── repository/         Spring Data JPA repos; projection/ interface projections
 ├── model/              JPA entities (*Entity) + enums (UserRole, UserStatus, DocumentStatus, ...)
 ├── security/           SecurityConfig, JwtTokenProvider, JwtAuthenticationFilter, OAuth2, session tracking
-├── config/             AsyncConfig, AwsS3Config, WebClientConfig, WebConfig (CORS), OpenApiConfig, logging filter
+├── config/             AsyncConfig, AwsS3Config, CacheConfig, ModerationStreamConfig, WebClientConfig, WebConfig (CORS), OpenApiConfig, logging filter
 ├── common/             ApiResponse<T> envelope, VNPayUtil (HMAC-SHA512 signing)
 ├── exception/          AppException + GlobalExceptionHandler (centralized)
 └── AiStudyHubApiApplication.java   @SpringBootApplication entry (normalizes TZ → Asia/Ho_Chi_Minh)
@@ -53,7 +54,7 @@ initdb.sql              full DDL: 8 native PG enums, 13 tables, pgvector ext + v
 
 ## Development Commands
 
-Java 17 + Maven (wrapper included). **There is no Node/Bun — this is a pure JVM project.**
+Java 21 + Maven (wrapper included). **There is no Node/Bun — this is a pure JVM project.**
 
 ```bash
 # Run infra only (PostgreSQL + Redis) for local dev
@@ -72,9 +73,9 @@ docker compose up --build -d
 ./mvnw clean package
 ```
 
-- **Swagger UI**: `http://localhost:8080/swagger-ui/index.html` (Actuator endpoints exposed at `/actuator/*`).
+- **Swagger UI**: `http://localhost:8080/swagger-ui/index.html`. Actuator is locked down: only `health`/`info` are exposed over HTTP, and `/actuator/**` (except `/actuator/health`) requires `ROLE_ADMIN` (see `SecurityConfig`).
 - **Profile wiring**: Maven `dev` profile (default) / `prod` set `spring.profiles.active`, injected into `application.yaml` via the `@spring.profiles.active@` resource-filtering placeholder. Both profiles use `ddl-auto: update`.
-- **CI** (`.github/workflows/workflow.yml`): deploy-only. On push to `main` it SSH-deploys to the VPS and runs `docker compose up --build -d`. There is **no CI build/test gate**; the Dockerfile builds with `-DskipTests`. Run `./mvnw test` locally before pushing.
+- **CI** (`.github/workflows/workflow.yml`): a `build-test` job runs `mvn -B clean test` on JDK 21 for every push to `main` and every PR; the `deploy` job (`needs: build-test`, main-only) SSH-deploys to the VPS and runs `docker compose up --build -d`. The Dockerfile builds with tests enabled (no `-DskipTests`), so a failing test blocks both the image build and the deploy.
 
 ## Code Conventions & Common Patterns
 
@@ -84,7 +85,8 @@ docker compose up --build -d
 
 **Authorization.** **No method-level security** (`@PreAuthorize`/`@Secured` are absent). Authz is purely path-based in `SecurityConfig`:
 - `/api/v1/admin/**` → `hasRole(ADMIN)`
-- `permitAll`: `/api/v1/auth/**`, public document search/preview/shared, GET reviews, **`/api/v1/internal/**` and `/api/internal/**`**, `/login/oauth2/**`, swagger
+- `/actuator/**` → `hasRole(ADMIN)` (except `/actuator/health`, which is `permitAll` for health probes)
+- `permitAll`: `/api/v1/auth/**`, public document search/preview/shared, GET reviews, **`/api/v1/internal/**` and `/api/internal/**`**, `/actuator/health`, `/login/oauth2/**`, swagger
 - everything else → authenticated
 
 `admin` vs `user` vs `internal` is separated **only by URL prefix**. The internal FastAPI callback (`/api/v1/internal/documents/callback`) is `permitAll` and instead guarded manually by comparing the `X-Internal-Secret` header to `${app.internal.secret}` (403 on mismatch).
@@ -97,12 +99,16 @@ docker compose up --build -d
 - **ID strategies split**: `@GeneratedValue(strategy = GenerationType.UUID)` (DB-assigned) for `UserEntity`, `InvoiceEntity`, `ReviewEntity`, `ReportEntity`, `ViolationHistoryEntity`, `NotificationEntity`; **app-assigned UUID** with `Persistable<UUID>` + a `@Transient isNew` flag reset in `@PostPersist/@PostLoad` for `DocumentEntity`, `ChatSessionEntity`, `ChatMessageEntity`; `GenerationType.IDENTITY` (Integer PK) for `StoragePlanEntity` + `TagEntity`.
 - **Enums** use `@Enumerated(EnumType.STRING)` + Hibernate `@ColumnTransformer` to bridge Java UPPER-case names to lowercase native PG enum literals (`read="UPPER(status::text)"`, `write="cast(LOWER(?) as <pg_enum>)"`).
 - **JSONB**: `ChatMessageEntity.citations` is `@JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition = "jsonb")` typed as `String`.
-- **Audit cols** `createdAt`/`updatedAt` are `insertable=false, updatable=false` and rely on DB `DEFAULT now()`; there is no `@UpdateTimestamp`/trigger, so `updated_at` is effectively insert-time only.
+- **Audit cols**: `createdAt` stays `insertable=false, updatable=false` (DB `DEFAULT now()`); `updatedAt` is now Hibernate-managed via `@UpdateTimestamp` (`@Column(name="updated_at")`), so it auto-refreshes on every flush — previously insert-time only. Applied to all entities that carry `updated_at` (`User`, `Document`, `ChatSession`, `Invoice`, `Review`, `Report`, `StoragePlan`).
 - Relationships are `@ManyToOne(LAZY)`; M:N via join tables; no JPA `cascade` (only SQL-level `ON DELETE CASCADE`).
 
 **Repositories.** Extend `JpaRepository`. Custom queries mix JPQL (`@Query`) and native SQL. Projections: DTO constructor-expression (`new ...ReportedDocumentResponse(...)`) and Spring Data interface projection (`TrendingStatsProjection`). Pagination via `Page<>` + `PageRequest.of(page, size)` (defaults 0/10).
 
-**Async.** Use `@Async("taskExecutor")` (the configured `ThreadPoolTaskExecutor`) for background work — currently only document processing. Do not spawn raw threads.
+**Async.** Use `@Async("taskExecutor")` (the configured `ThreadPoolTaskExecutor`) for fire-and-forget background work — currently only document processing (RAG calls). Do not spawn raw threads. Auto-moderation uses a Redis Streams consumer instead (see below).
+
+**Caching.** Spring's cache abstraction backs **read-heavy, slowly-changing reads** with Redis via `@Cacheable`/`@CacheEvict` (`config/CacheConfig` → `RedisCacheManager`, per-cache TTL under `app.cache.*`, JSON values via `GenericJackson2JsonRedisSerializer`). This is distinct from the ephemeral `StringRedisTemplate` usage (tokens/quota/blacklist). Two caches: `trendingDocuments` (key `page:size`, TTL 10m) and `publicTags` (TTL 30m). **`@Cacheable` is proxy-based → silently no-ops on self-invocation**, so the trending cacheable read lives in its own bean `TrendingDocumentCacheLoader` and its cached payload holds only PUBLIC tags (the user-agnostic view); `TrendingDocumentServiceImpl` then enriches the current owner's PRIVATE tags per request via one cheap `findOwnedDocumentsWithTags` query (no-op for guests/non-owners) — this split keeps the cache globally shareable (one entry per page) without leaking private tags across viewers. `PageImpl` is not JSON-friendly, so the cached value is the flat `TrendingPage` holder DTO. Eviction: `createPublicTag` clears both caches; `approveDocument`/`rejectDocument`/`deleteDocument` clear `trendingDocuments` (`allEntries=true`, since ranking shifts across all pages); new reviews rely on TTL self-heal (no eviction coupling). Cache annotations are **inert in pure-Mockito unit tests** (no proxy/context), so they're verified structurally, not via a Redis round-trip.
+
+**Redis Streams (moderation).** Auto-moderation runs as a **durable job queue** on `stream:moderation` (replaces the old `@Async` fire-and-forget — a crash no longer silently drops the job and leaves the doc stuck `PENDING`). Same Redis instance as the cache/token usage; no new dependency (Spring Data Redis ships the Streams API). Components: `ModerationStreamProducer` (`XADD {document_id}`, called from both trigger sites), `ModerationStreamListener` (`StreamMessageListenerContainer` consumer-group `moderation-cg`, `autoAcknowledge=false` → runs `AutoModerationService.process()`, ACKs on success/idempotent-skip, leaves unacked on failure), `ModerationDlqHandler` (reads delivery-count via `XPENDING`; after `app.moderation.max-attempts` re-posts to `stream:moderation:dlq` + ACKs the original), `ModerationStreamConfig` (`@EnableScheduling`; creates the group idempotently **in-bean** before the `SmartLifecycle` container starts polling; the listener's `@Scheduled reclaimStale()` re-claims PEL messages idle > `app.moderation.reclaim.min-idle-ms` and reprocesses them — this is what actually retries failed/crashed jobs, since `XREADGROUP … >` only returns never-delivered messages). At-least-once, but idempotent: `process()` is a no-op when status ≠ `PENDING`, so redelivery is safe. `app.moderation.consumer-name` MUST differ per instance (`${HOSTNAME}`). Design docs: `documents/moderation-streams-before.md` / `-after.md`.
 
 **External HTTP.** Use the shared `WebClient` bean for the FastAPI RAG service. (Google OAuth token exchange in `AuthServiceImpl` uses `RestClient` instead — a pre-existing inconsistency.)
 
@@ -117,7 +123,17 @@ docker compose up --build -d
 | `security/JwtTokenProvider.java` | jjwt HMAC tokens: access 1h (`app.jwt.access-expiration-ms`=3600000), refresh 7d |
 | `security/JwtAuthenticationFilter.java` | Bearer validation + Redis blacklist check + user load |
 | `service/impl/AuthServiceImpl.java` | Login (issue + store refresh), rotate-on-refresh, logout blacklist |
-| `service/impl/DocumentServiceImpl.java` | Core upload/processing state machine + all `@Async` FastAPI orchestration |
+| `service/impl/DocumentServiceImpl.java` | Core document business orchestrator (upload validation, upload→extract/index state machine, owner/admin lifecycle mutations, read queries). Preview rendering, RAG HTTP, and entity→response mapping are delegated to the 3 collaborators below (SRP split of the former ~1177-line god class). |
+| `service/impl/DocumentPreviewGenerator.java` | Truncated preview generation (PDF/DOCX/TXT ~30%) + preview-path helper. No DB deps. |
+| `service/impl/DocumentRagClient.java` | Thin blocking `WebClient` client for every FastAPI RAG call (`/process`, `/extract`, `/index`, `/visibility`, `/documents/{id}`). Propagates errors; the @Async orchestrator owns status transitions. |
+| `service/impl/DocumentMapper.java` | `DocumentEntity`→`DocumentResponse` projection + per-viewer tag visibility. Replaces 5 duplicated inline mapping blocks. |
+| `service/impl/TrendingDocumentCacheLoader.java` | `@Cacheable` Redis-backed builder of the trending page (user-agnostic, PUBLIC-tags-only) — split out of `TrendingDocumentServiceImpl` so the cache proxy engages (avoids self-invocation). Returns the flat `TrendingPage` holder. |
+| `config/CacheConfig.java` | `@EnableCaching` + `RedisCacheManager` (per-cache TTL, JSON serializer). Cache-name constants: `trendingDocuments`, `publicTags`. |
+| `service/impl/AutoModerationServiceImpl.java` | OpenAI Moderation API triage of public docs (auto-approve / auto-reject / leave PENDING). Synchronous `process(UUID)` invoked by the stream consumer; reads chunks read-only, drives `DocumentService.approve/reject` internally. Failures propagate (no swallow). |
+| `service/impl/ModerationStreamProducer.java` | `XADD stream:moderation {document_id}` — durable replacement for the old `moderateDocumentAsync` fire-and-forget. Called from both trigger sites (callback `EXTRACTED` + `updateDocument` PRIVATE→PUBLIC). |
+| `service/impl/ModerationStreamListener.java` | Consumer-group `moderation-cg` reader: runs `process()`, ACKs on success, leaves unacked on failure (→ retry), moves to DLQ at `max-attempts`. Owns the `@Scheduled` PEL reclaim. |
+| `service/impl/ModerationDlqHandler.java` | Delivery-count lookup (`XPENDING`) → dead-letter decision; re-posts failed messages to `stream:moderation:dlq`. |
+| `config/ModerationStreamConfig.java` | `@EnableScheduling` + `StreamMessageListenerContainer` (consumer-group reader, manual ACK); creates the group idempotently in-bean before the container starts. |
 | `service/impl/ChatServiceImpl.java` | Chat sessions, AI-quota enforcement, multi-turn `history` construction (last 10 `chat_messages` → RAG), citation extraction from RAG JSON |
 | `service/impl/RedisTokenServiceImpl.java` | Redis keys: `refresh_token:`, `blacklist_token:`, `otp:` |
 | `service/impl/S3UploadProvider.java` | Sole `UploadProvider` impl (AWS SDK v2, presigned URLs) |
@@ -125,11 +141,11 @@ docker compose up --build -d
 | `common/ApiResponse.java` | Universal response envelope |
 | `exception/GlobalExceptionHandler.java` | Centralized error mapping → `ApiResponse.error` |
 | `exception/AppException.java` | The one custom exception (`HttpStatus` + message) |
-| `src/main/resources/application.yaml` | Base config + all `${ENV:default}` placeholders |
+| `src/main/resources/application.yaml` | Base config + `${ENV}` placeholders. **No secret defaults** — `JWT_SECRET`, `INTERNAL_API_SECRET`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` fail fast if unset. Actuator exposes only `health`/`info`. |
 | `initdb.sql` | Full DDL (8 enums, 13 tables, pgvector `vector(1536)` HNSW cosine index) |
 | `pom.xml` | Maven build, `dev`/`prod` profiles, dependency versions |
 
-**Externalized config groups** (`application.yaml`): `aws.s3.*`, `fastapi.*` (`base-url`, `rag-process-url`, `rag-chat-url`, `chat-timeout-seconds:30`), `app.jwt.*`, `app.internal.secret`, `app.async.*`, `app.upload.max-file-size-bytes` (50MB), `app.share-url-prefix`, `vnpay.*`, `spring.security.oauth2.client` (Google), `spring.mail.*`.
+**Externalized config groups** (`application.yaml`): `aws.s3.*`, `openai.*` (`api-key`, `moderation-url`), `fastapi.*` (`base-url`, `rag-process-url`, `rag-chat-url`, `chat-timeout-seconds:30`), `app.jwt.*`, `app.internal.secret`, `app.async.*`, `app.cache.*` (`trending-documents`/`public-tags`/`default` TTL minutes), `app.moderation.*` (stream-key/group/consumer-name/poll/batch/max-attempts/dlq/reclaim), `app.upload.max-file-size-bytes` (50MB), `app.share-url-prefix`, `vnpay.*`, `spring.security.oauth2.client` (Google), `spring.mail.*`. Secrets (`JWT_SECRET`, `INTERNAL_API_SECRET`, `AWS_*`, `OPENAI_API_KEY`, `VNPAY_*`) come **only** from env (no hardcoded fallback). `spring.threads.virtual.enabled: true` enables Java 21 virtual threads.
 
 ## Sibling Service: RAG Pipeline (FastAPI)
 
@@ -149,13 +165,13 @@ All RAG ingest endpoints live under `fastapi.base-url` (default `http://localhos
 | API → RAG | `PATCH {base}/documents/{id}/visibility` | `{visibility}` | Stamp visibility into chunk metadata (metadata only; this API gates retrieval). |
 | API → RAG | `DELETE {base}/documents/{id}` | — | Delete all chunks + parent docs + rebuild BM25 (reject / delete flow). |
 | API → RAG | `POST /api/v1/chat` | `{query, user_id, document_id, history}` | Chat. `history` = the session's prior turns (`{role, content}`, oldest first, ≤10) for multi-turn memory. Response envelope mirrors `ApiResponse` (`data.llm_response` + `data.debug.documents` for citations). RAG **deterministically** routes SMALLTALK / SUMMARY / QA (no LLM); smalltalk returns a canned reply with no `documents` (→ 0 citations), and the QA branch short-circuits when retrieval is empty. |
-| RAG → API | `POST /api/v1/internal/documents/callback` | `{document_id, status, summary}` + header `X-Internal-Secret` | Guarded by `InternalDocumentController` (`app.internal.secret`); mismatch → 403. `status` ∈ `SUCCESS` (→ `COMPLETED` if `PROCESSING`), `EXTRACTED` (stores summary, status unchanged), `FAILED` (→ `FAILED`). Retried 3× with backoff. |
+| RAG → API | `POST /api/v1/internal/documents/callback` | `{document_id, status, summary}` + header `X-Internal-Secret` | Guarded by `InternalDocumentController` (`app.internal.secret`); mismatch → 403. `status` ∈ `SUCCESS` (→ `COMPLETED` if `PROCESSING`), `EXTRACTED` (stores summary, status stays `PENDING`, then appends a job to `stream:moderation` via `ModerationStreamProducer`), `FAILED` (→ `FAILED`). Retried 3× with backoff. |
 
 > **Moderation reads `document_chunks` directly** (shared DB) via a read-only Java repository — `DocumentChunkRepository` returns a `ChunkContentProjection`. There is intentionally **no `/chunks` endpoint on RAG**: the moderation service lives in this backend, so it queries the shared DB instead of an HTTP hop.
 
 ### Document lifecycle & moderation flow (two-phase extract/index)
 
-Uses the existing `DocumentStatus` values — **no new statuses were added**. Moderation itself is owned by a separate service; this API only wires the seams (extract so chunks exist, expose them via a read-only `document_chunks` query, index on approve, purge on reject).
+Uses the existing `DocumentStatus` values — **no new statuses were added**. Moderation is implemented **in this backend** as `AutoModerationService` (`AutoModerationServiceImpl`): it reads chunks read-only from `document_chunks` via `DocumentChunkRepository`, classifies them with the OpenAI Moderation API, and drives `DocumentService.approveDocument` / `rejectDocument(id, reason)` internally (no HTTP/JWT — same Spring context). This API also wires the RAG seams (extract so chunks exist, index on approve, purge on reject).
 
 ```mermaid
 flowchart TD
@@ -163,20 +179,20 @@ flowchart TD
     PROC -->|callback SUCCESS| DONE1([COMPLETED])
     UP_PUB([Upload PUBLIC]) --> EXT["PENDING -> POST /extract (chunks, embedding deferred)"]
     EXT -->|callback EXTRACTED| PEND(["PENDING — chunks ready"])
-    PEND -->|"moderation: read document_chunks -> decide"| DEC{decision}
-    DEC -->|approve| APR["PROCESSING -> PATCH /visibility=public + POST /index"]
+    PEND -->|"auto-moderation (OpenAI) on document_chunks -> triage"| DEC{max score}
+    DEC -->|"approve (<0.40)"| APR["PROCESSING -> PATCH /visibility=public + POST /index"]
     APR -->|callback SUCCESS| DONE2([COMPLETED])
-    DEC -->|reject| REJ["REJECTED -> DELETE /documents/{id}"]
-    UPD([Update PRIVATE->PUBLIC]) --> PEND2(["PENDING — chunks already exist"])
-    PEND2 -->|approve| APR
-    PEND2 -->|reject| REJ
+    DEC -->|reject (>=0.80)| REJ["REJECTED -> DELETE /documents/{id}"]
+    DEC -->|"yellow 0.40-0.80"| PENDMAN(["PENDING — manual admin review"])
+    UPD([Update PRIVATE->PUBLIC]) --> PEND2(["PENDING — chunks already embedded (no /extract)"])
+    PEND2 -->|"auto-moderation reads existing chunks -> triage"| DEC
 ```
 
 - **PRIVATE** (`processDocumentAsync`): `/process` → extract + index immediately → callback `SUCCESS` → `COMPLETED`. No moderation.
-- **PUBLIC upload** (`processDocumentAsync`): → `PENDING`, notify admins, call `/extract` (chunks created, `embedding=NULL`). The moderation service (same backend) reads chunk content directly from `document_chunks` via `DocumentChunkRepository`, classifies each with the OpenAI Moderation API, then drives the existing **approve/reject** methods internally (no HTTP, no JWT — same Spring context).
+- **PUBLIC upload** (`processDocumentAsync`): → `PENDING`, notify admins, call `/extract` (chunks created, `embedding=NULL`). On the RAG `EXTRACTED` callback, `handleFastApiCallback` appends to `stream:moderation` (`ModerationStreamProducer.enqueue`) — a durable job the consumer processes async. That reads chunks read-only via `DocumentChunkRepository`, calls the OpenAI Moderation API (batches of <=30 chunks), and triages by the **max category score across all chunks**: `>= 0.80` -> auto-reject (`rejectDocument(id, reason)` with a generated Vietnamese reason), `< 0.40` -> auto-approve (`approveDocument(id)`), `0.40-0.80` -> left `PENDING` for manual admin review. It stays `PENDING` (skipped) when `openai.api-key` is empty/`mock_key` or chunks are missing/empty; a transient OpenAI failure leaves the message unacked (retried, then DLQ'd after `app.moderation.max-attempts`).
 - **Approve** (`approveDocument`): `PENDING → PROCESSING` → `PATCH /visibility=public` + `POST /index` (embeds pending chunks; no-op if already embedded, e.g. the update-visibility case) → callback `SUCCESS` → `COMPLETED`.
 - **Reject** (`rejectDocument`): → `REJECTED` + `DELETE /documents/{id}` (purge extracted/indexed chunks).
-- **Update PRIVATE→PUBLIC** (`updateDocument`): chunks already exist (indexed as private) → `PENDING` for moderation; RAG visibility is flipped to public **only at approve**, not at update time.
+- **Update PRIVATE→PUBLIC** (`updateDocument`): chunks already exist (indexed as private) → set to `PENDING` + notify admins, then **appends to `stream:moderation`** via `ModerationStreamProducer` (`triggerModeration`) — chunks are already embedded, so moderation reads them immediately without an `/extract` round-trip and without an `EXTRACTED` callback. RAG visibility is flipped to public **only at approve** (`approveDocument`), not at update time. This path does **not** call RAG `/extract` (no new extraction runs); moderation is enqueued in-process instead of via a callback. (So moderation has **two** entry points that both enqueue the same `stream:moderation` job: the `EXTRACTED` callback for fresh public uploads, and `updateDocument` for PRIVATE→PUBLIC updates.)
 
 ### RAG ingestion pipeline
 
@@ -203,13 +219,13 @@ Hybrid search: **BM25** (over parent docs, filtered to the requested `document_i
 
 ## Runtime / Tooling Preferences
 
-- **Runtime**: Java 17 (JDK 17). No JavaScript runtime is involved.
+- **Runtime**: Java 21 (JDK 21 LTS) — virtual threads power Tomcat request threads + the `@Async` `taskExecutor`. No JavaScript runtime is involved.
 - **Build tool**: Maven via the `mvnw` wrapper (note: `mvnw` is gitignored; use a locally installed `mvn` if the wrapper is absent — `mvnw.cmd` exists for Windows).
 - **Package manager**: Maven (there is no npm/yarn/pnpm/bun).
 - **`dev` is the default-active profile** — running plain `./mvnw spring-boot:run` uses `dev`.
 - **Containers**: Docker multi-stage build (`Dockerfile`): `maven:3.8.8-eclipse-temurin-17` → `eclipse-temurin:17-jre-alpine`. `docker-compose.yaml` runs `postgres` (pgvector/pgvector:0.8.2-pg16-trixie, mounts `initdb.sql`), `redis:7-alpine`, and the backend, on an **external** `ai-study-hub-network`. `docker-compose.local.yaml` is a dev-only postgres+redis stack (no backend, gitignored).
 - **Upload size**: Spring multipart ceiling is **60MB**, intentionally above the **50MB** business cap (`app.upload.max-file-size-bytes`) so the service-layer check returns a clean 400 rather than a generic 500. Keep multipart ≥ business cap when changing limits.
-- **Secrets**: `.env` is gitignored and holds `DATABASE_*`, `REDIS_*`, `JWT_SECRET`, `GOOGLE_*`, `AWS_*`, `MAIL_*`, `INTERNAL_API_SECRET`, `FASTAPI_*`. Never commit it; never print secret values.
+- **Secrets**: `.env` is gitignored and holds `DATABASE_*`, `REDIS_*`, `JWT_SECRET`, `GOOGLE_*`, `AWS_*`, `MAIL_*`, `INTERNAL_API_SECRET`, `FASTAPI_*`, `OPENAI_*` (the `OPENAI_API_KEY` consumed by auto-moderation). Never commit it; never print secret values.
 
 ## Testing & QA
 
@@ -218,4 +234,4 @@ Hybrid search: **BM25** (over parent docs, filtered to the requested `document_i
 - **Assertions**: JUnit5 `Assertions.*` only — AssertJ is on the classpath but unused.
 - **Naming**: classes `*Test`; packages mirror `main`. Method naming is inconsistent across files (`method_scenario_expectation` in services, `_Success` in controllers, `testDeserialize*` in the DTO test) — match the file you're editing.
 - **Run**: `./mvnw clean test`. No extra infra required.
-- **Coverage**: 9 of 16 service impls are tested (`AiQuota`, `Chat`, `User`, `Report`, `Document`, `Tag`, `AdminStats`, `Auth`, `S3UploadProvider`). **Untested**: `PaymentServiceImpl`, `ReviewServiceImpl`, `TrendingDocumentServiceImpl`, `RedisTokenServiceImpl`, `ChatbotClientImpl`, `UserSanctionServiceImpl`, `GoogleOAuth2UserServiceImpl`. Only `AdminReportController` & `AdminStatsController` have controller tests; the security filter chain is untested. Prefer the existing Mockito-unit style when adding tests.
+- **Coverage**: 144 unit tests across 21 classes (`AiQuota`, `Chat`, `User`, `Report`, `Document` + extracted `DocumentPreviewGenerator`/`DocumentRagClient`/`DocumentMapper`, `Trending` (+`TrendingDocumentCacheLoader`), `Tag`, `AdminStats`, `Auth`, `S3UploadProvider`, `AutoModeration` (+`ModerationStreamProducer`/`ModerationStreamListener`/`ModerationDlqHandler`), `Payment`, controller + DTO tests). **Untested service impls**: `ReviewServiceImpl`, `RedisTokenServiceImpl`, `ChatbotClientImpl`, `UserSanctionServiceImpl`, `GoogleOAuth2UserServiceImpl`. The security filter chain remains untested. `@Cacheable`/`@CacheEvict` are proxy-based and thus **inert in the pure-Mockito unit tests** (no Spring context) — verified structurally, not via Redis round-trip; likewise the `stream:moderation` `StreamMessageListenerContainer` + group creation are not unit-tested (need a real Redis + Spring context). **CI now gates deploys on `mvn test`** (`build-test` job). Prefer the existing Mockito-unit style when adding tests.

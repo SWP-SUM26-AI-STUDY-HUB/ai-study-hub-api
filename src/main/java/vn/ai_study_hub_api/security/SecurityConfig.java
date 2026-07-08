@@ -64,6 +64,8 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/documents/*/reviews").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/login",
@@ -78,6 +80,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/google/callback",
                                 "/api/v1/auth/**",
                                 "/api/v1/documents/search",
+                                "/api/v1/documents/trending",
                                 "/api/v1/documents/*/preview",
                                 "/api/v1/internal/**",
                                 "/api/v1/documents/shared/**",

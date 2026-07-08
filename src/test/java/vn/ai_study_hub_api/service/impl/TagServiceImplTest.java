@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import vn.ai_study_hub_api.controller.response.TagResponse;
 import vn.ai_study_hub_api.model.TagEntity;
+import vn.ai_study_hub_api.model.TagVisibility;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
@@ -101,5 +102,22 @@ public class TagServiceImplTest {
 
         verify(tagRepository, never()).save(any(TagEntity.class));
     }
+    @Test
+    void getAllPublicTags_Success() {
+        TagEntity publicTag = TagEntity.builder().id(1).label("Java").visibility(TagVisibility.PUBLIC).build();
+        TagEntity legacyTag = TagEntity.builder().id(2).label("Python").visibility(null).build();
+        when(tagRepository.findAllPublicTags()).thenReturn(List.of(publicTag, legacyTag));
+
+        List<TagResponse> results = tagService.getAllPublicTags();
+
+        assertNotNull(results);
+        assertEquals(2, results.size());
+        assertEquals("Java", results.get(0).getLabel());
+        assertEquals(TagVisibility.PUBLIC, results.get(0).getVisibility());
+        // null visibility is normalized to PUBLIC (legacy tag behavior)
+        assertEquals(TagVisibility.PUBLIC, results.get(1).getVisibility());
+        verify(tagRepository, times(1)).findAllPublicTags();
+    }
+
 }
 
