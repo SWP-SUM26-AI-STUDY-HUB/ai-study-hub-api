@@ -99,6 +99,25 @@ app:
     max-pool-size: 20
     queue-capacity: 100
     thread-name-prefix: doc-async-
+  cache:
+    # TTL per Redis cache; externalized so ops can tune without rebuild.
+    # Trending: popular-doc ranking changes slowly -> 10m. Public tags: tiny, rarely mutate -> 30m.
+    trending-documents-ttl-minutes: ${APP_CACHE_TRENDING_TTL_MIN:10}
+    public-tags-ttl-minutes: ${APP_CACHE_PUBLIC_TAGS_TTL_MIN:30}
+    default-ttl-minutes: ${APP_CACHE_DEFAULT_TTL_MIN:5}
+  moderation:
+    # Redis Streams job queue for auto-moderation (durable replacement for @Async fire-and-forget).
+    stream-key: stream:moderation
+    group: moderation-cg
+    consumer-name: ${HOSTNAME:api-1}     # MUST differ per instance (env HOSTNAME/POD_NAME)
+    poll-timeout-seconds: 2
+    batch-size: 1
+    max-attempts: 5                       # delivery-count threshold -> DLQ
+    dlq-key: stream:moderation:dlq
+    reclaim:
+      enabled: true
+      fixed-delay-ms: 60000               # how often to scan the PEL for stale messages
+      min-idle-ms: 300000                 # only reclaim messages idle > 5min (avoids stealing in-flight work)
 
 vnpay:
   tmn-code: ${VNPAY_TMN_CODE}

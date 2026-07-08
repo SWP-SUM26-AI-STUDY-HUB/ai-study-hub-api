@@ -2,9 +2,12 @@ package vn.ai_study_hub_api.service.impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.ai_study_hub_api.config.CacheConfig;
 import vn.ai_study_hub_api.controller.request.AdminCreateTagRequest;
 import vn.ai_study_hub_api.controller.response.TagResponse;
 import vn.ai_study_hub_api.exception.AppException;
@@ -107,6 +110,7 @@ public class TagServiceImpl implements TagService {
     }
 
     @Override
+    @CacheEvict(cacheNames = {CacheConfig.CACHE_PUBLIC_TAGS, CacheConfig.CACHE_TRENDING_DOCUMENTS}, allEntries = true)
     @Transactional
     public TagResponse createPublicTag(AdminCreateTagRequest request) {
         log.info("Creating public tag with label: '{}'", request.getLabel());
@@ -148,6 +152,7 @@ public class TagServiceImpl implements TagService {
     }
 
     @Override
+    @Cacheable(cacheNames = CacheConfig.CACHE_PUBLIC_TAGS)
     @Transactional(readOnly = true)
     public List<TagResponse> getAllPublicTags() {
         log.info("Fetching all public tags");

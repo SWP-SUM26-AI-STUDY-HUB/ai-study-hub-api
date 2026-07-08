@@ -3,12 +3,13 @@ package vn.ai_study_hub_api.service.impl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import vn.ai_study_hub_api.config.CacheConfig;
 import vn.ai_study_hub_api.controller.request.UpdateDocumentRequest;
 import vn.ai_study_hub_api.controller.response.DocumentAccessResponse;
 import vn.ai_study_hub_api.controller.response.DocumentResponse;
@@ -30,7 +31,6 @@ import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.security.CustomUserDetails;
-import vn.ai_study_hub_api.service.AutoModerationService;
 import vn.ai_study_hub_api.service.DocumentService;
 import vn.ai_study_hub_api.service.UploadProvider;
 
@@ -71,8 +71,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRagClient ragClient;
     private final DocumentMapper documentMapper;
 
-    @Lazy
-    private final AutoModerationService autoModerationService;
+    private final ModerationStreamProducer moderationStreamProducer;
 
     @Value("${app.upload.max-file-size-bytes}")
     private long maxFileSizeBytes;
@@ -244,7 +243,7 @@ public class DocumentServiceImpl implements DocumentService {
                 document.setSummary(summary);
             }
             log.info("RAG EXTRACTED. Document {} chunks ready for moderation; status remains {}. Triggering auto-moderation.", documentId, document.getStatus());
-            autoModerationService.moderateDocumentAsync(documentId);
+            moderationStreamProducer.enqueue(documentId);
         } else {
             // FAILED (or unknown). A PENDING public doc whose extraction failed also goes FAILED.
             if (DocumentStatus.PROCESSING.equals(document.getStatus())
@@ -420,7 +419,7 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         if (triggerModeration) {
-            autoModerationService.moderateDocumentAsync(documentId);
+            moderationStreamProducer.enqueue(documentId);
         }
         // NOTE: PRIVATE -> PUBLIC intentionally does NOT call RAG here. The doc was
         // already indexed as private (chunks + embeddings exist), so moderation can
@@ -441,6 +440,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @CacheEvict(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS, allEntries = true)
     @Transactional
     public void deleteDocument(UUID documentId, UUID userId) {
         log.info("Deleting document ID: {}, requested by user ID: {}", documentId, userId);
@@ -611,6 +611,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @CacheEvict(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS, allEntries = true)
     @Transactional
     public void approveDocument(UUID documentId) {
         log.info("Approving public document with ID: {}", documentId);
@@ -638,6 +639,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @CacheEvict(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS, allEntries = true)
     @Transactional
     public void rejectDocument(UUID documentId, String reason) {
         log.info("Rejecting public document with ID: {}, reason: {}", documentId, reason);

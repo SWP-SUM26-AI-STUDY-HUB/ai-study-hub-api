@@ -68,7 +68,7 @@ public class DocumentServiceImplTest {
     private ReviewRepository reviewRepository;
 
     @Mock
-    private vn.ai_study_hub_api.service.AutoModerationService autoModerationService;
+    private ModerationStreamProducer moderationStreamProducer;
 
     // Spied real instance: @InjectMocks injects it into the constructor AND real
     // mapping logic runs (so query tests still assert actual projection behavior).
@@ -1170,7 +1170,7 @@ public class DocumentServiceImplTest {
         assertEquals("PENDING", response.getStatus());
         verify(documentRepository, times(1)).save(doc);
         verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
-        verify(autoModerationService, times(1)).moderateDocumentAsync(docId);
+        verify(moderationStreamProducer, times(1)).enqueue(docId);
     }
 
     @Test

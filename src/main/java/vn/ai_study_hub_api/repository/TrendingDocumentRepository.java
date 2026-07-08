@@ -35,4 +35,14 @@ public interface TrendingDocumentRepository extends JpaRepository<DocumentEntity
             "FROM reviews WHERE document_id IN :documentIds GROUP BY document_id",
             nativeQuery = true)
     List<TrendingStatsProjection> findStatsForDocuments(@Param("documentIds") List<UUID> documentIds);
+    /**
+     * Fetches documents (among {@code docIds}) owned by {@code userId} with their tags eagerly
+     * loaded. Used to enrich a cached trending page with the owner's PRIVATE tags — only the docs
+     * the caller actually owns are touched, so the hot path stays a no-op for non-owners.
+     */
+    @Query("SELECT DISTINCT d FROM DocumentEntity d LEFT JOIN FETCH d.tags " +
+            "WHERE d.id IN :docIds AND d.uploader.id = :userId")
+    List<DocumentEntity> findOwnedDocumentsWithTags(@Param("docIds") List<UUID> docIds,
+                                                    @Param("userId") UUID userId);
+
 }
