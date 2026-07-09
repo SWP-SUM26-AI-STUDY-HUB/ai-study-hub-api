@@ -1,14 +1,39 @@
-name: Deploy Spring Boot app to VPS
+name: CI build/test & deploy
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
+# Any new tokens / secrets are injected via GitHub Secrets — never inline them.
 jobs:
-  deploy:
+  # --- CI test gate --------------------------------------------------------
+  # Build + run the full unit-test suite on every push and PR. The deploy job
+  # below depends on this, so a failing test can never reach the VPS.
+  build-test:
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Build & test
+        run: mvn -B clean test
+
+  # --- Deploy (only on main, only after tests pass) -----------------------
+  deploy:
+    needs: build-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,7 +50,7 @@ jobs:
               echo "directory not exist, clone code..."
               rm -rf ~/ai-study-hub-api
             fi
-            
+
             mkdir -p ~/ai-study-hub-api
             cd ~/ai-study-hub-api
 
@@ -38,7 +63,7 @@ jobs:
               echo "directory not exist, clone code..."
               git clone -b main https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git .
             fi
-            
+
             if [ ! -f "initdb.sql" ]; then
               echo "warning: initdb.sql not exist, skip import data..."
             fi

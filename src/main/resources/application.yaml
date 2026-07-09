@@ -4,8 +4,9 @@ server:
 spring:
   application:
     name: ai-study-hub-api
-  profiles:
-    active: @spring.profiles.active@
+  threads:
+    virtual:
+      enabled: true # Java 21 virtual threads: Tomcat request threads + @Async taskExecutor serve blocking I/O (RAG WebClient) without pinning OS threads
   servlet:
     multipart:
       # Multipart ceiling intentionally sits above the 50MB business rule
@@ -55,7 +56,12 @@ management:
   endpoints:
     web:
       exposure:
-        include: '*'
+        # Chỉ expose các endpoint an toàn qua HTTP; /env, /beans, /heapdump... KHÔNG public.
+        # Toàn bộ /actuator/** (trừ /actuator/health) khoá chỉ ADMIN trong SecurityConfig.
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized # ẩn chi tiết probe (DB/Redis) với anonymous
 
 logging:
   level:
@@ -66,8 +72,8 @@ aws:
   s3:
     bucket-name: ${AWS_S3_BUCKET:ai-study-hub-bucket}
     region: ${AWS_REGION:ap-southeast-1}
-    access-key: ${AWS_ACCESS_KEY_ID:mock_access_key}
-    secret-key: ${AWS_SECRET_ACCESS_KEY:mock_secret_key}
+    access-key: ${AWS_ACCESS_KEY_ID}
+    secret-key: ${AWS_SECRET_ACCESS_KEY}
     endpoint: ${AWS_S3_ENDPOINT:}
 
 fastapi:
@@ -83,16 +89,35 @@ app:
     # Keep spring.servlet.multipart.max-file-size >= this value.
     max-file-size-bytes: ${APP_UPLOAD_MAX_FILE_SIZE:52428800} # 50MB
   jwt:
-    secret: ${JWT_SECRET:9a4f2c8d3e7b1a5c6d8e0f9b8c7a6d5e4f3c2b1a0d9e8f7a6b5c4d3e2f1a0b9c}
+    secret: ${JWT_SECRET} # KHÔNG có default — fail-fast nếu thiếu env (tránh dùng secret hardcode)
     access-expiration-ms: 3600000
     refresh-expiration-ms: 604800000
   internal:
-    secret: ${INTERNAL_API_SECRET:default-secret-key-change-me}
+    secret: ${INTERNAL_API_SECRET} # KHÔNG có default — phải khớp INTERNAL_API_SECRET của RAG service
   async:
     core-pool-size: 5
     max-pool-size: 20
     queue-capacity: 100
     thread-name-prefix: doc-async-
+  cache:
+    # TTL per Redis cache; externalized so ops can tune without rebuild.
+    # Trending: popular-doc ranking changes slowly -> 10m. Public tags: tiny, rarely mutate -> 30m.
+    trending-documents-ttl-minutes: ${APP_CACHE_TRENDING_TTL_MIN:10}
+    public-tags-ttl-minutes: ${APP_CACHE_PUBLIC_TAGS_TTL_MIN:30}
+    default-ttl-minutes: ${APP_CACHE_DEFAULT_TTL_MIN:5}
+  moderation:
+    # Redis Streams job queue for auto-moderation (durable replacement for @Async fire-and-forget).
+    stream-key: stream:moderation
+    group: moderation-cg
+    consumer-name: ${HOSTNAME:api-1}     # MUST differ per instance (env HOSTNAME/POD_NAME)
+    poll-timeout-seconds: 2
+    batch-size: 1
+    max-attempts: 5                       # delivery-count threshold -> DLQ
+    dlq-key: stream:moderation:dlq
+    reclaim:
+      enabled: true
+      fixed-delay-ms: 60000               # how often to scan the PEL for stale messages
+      min-idle-ms: 300000                 # only reclaim messages idle > 5min (avoids stealing in-flight work)
 
 vnpay:
   tmn-code: ${VNPAY_TMN_CODE}

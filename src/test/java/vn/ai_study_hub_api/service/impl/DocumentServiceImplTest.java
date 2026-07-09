@@ -5,13 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.web.reactive.function.client.WebClient;
 import vn.ai_study_hub_api.exception.AppException;
-import reactor.core.publisher.Mono;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
 import vn.ai_study_hub_api.model.DocumentVisibility;
@@ -59,13 +57,23 @@ public class DocumentServiceImplTest {
     private UploadProvider uploadProvider;
 
     @Mock
-    private WebClient webClient;
+    private DocumentRagClient ragClient;
 
+    @Mock
+    private DocumentPreviewGenerator previewGenerator;
     @Mock
     private StoragePlanRepository storagePlanRepository;
 
     @Mock
     private ReviewRepository reviewRepository;
+
+    @Mock
+    private ModerationStreamProducer moderationStreamProducer;
+
+    // Spied real instance: @InjectMocks injects it into the constructor AND real
+    // mapping logic runs (so query tests still assert actual projection behavior).
+    @Spy
+    private DocumentMapper documentMapper = new DocumentMapper();
 
     @InjectMocks
     private DocumentServiceImpl documentService;
@@ -82,7 +90,6 @@ public class DocumentServiceImplTest {
         documentId = UUID.randomUUID();
 
         // Inject the Value annotation values since MockitoExtension won't inject them
-        org.springframework.test.util.ReflectionTestUtils.setField(documentService, "fastApiUrl", "http://localhost:8000/api");
         org.springframework.test.util.ReflectionTestUtils.setField(documentService, "maxFileSizeBytes", 52428800L);
 
         mockUser = UserEntity.builder()
@@ -186,18 +193,6 @@ public class DocumentServiceImplTest {
         when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
         when(uploadProvider.generatePresignedUrl(storagePath)).thenReturn("https://presigned.url/test.pdf");
 
-        // Mock WebClient call
-        WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
-        WebClient.RequestBodySpec requestBodySpec = mock(WebClient.RequestBodySpec.class);
-        WebClient.RequestHeadersSpec requestHeadersSpec = mock(WebClient.RequestHeadersSpec.class);
-        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-
-        when(webClient.post()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
-        when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
 
         documentService.processDocumentAsync(documentId, tempFile, storagePath, contentType);
 
@@ -205,7 +200,7 @@ public class DocumentServiceImplTest {
         verify(uploadProvider, times(1)).generatePresignedUrl(storagePath);
         verify(documentRepository, times(1)).save(any(DocumentEntity.class));
         verify(userRepository, times(1)).save(mockUser);
-        verify(webClient, times(1)).post();
+        verify(ragClient, times(1)).triggerProcess(eq(documentId), anyString());
         assertEquals(100L, mockUser.getStorageUsed());
         assertEquals(DocumentStatus.PROCESSING, mockDocument.getStatus());
         verify(tempFile, times(1)).delete();
@@ -813,6 +808,137 @@ public class DocumentServiceImplTest {
     }
 
     @Test
+    void getDocumentById_NotFound_Throws404() {
+        UUID docId = UUID.randomUUID();
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, null)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getDocumentById_Deleted_Throws404() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.DELETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .deletedAt(java.time.LocalDateTime.now())
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, null)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+    }
+
+    @Test
+    void getDocumentById_PublicCompleted_GuestSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Public Doc")
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.getDocumentById(docId, null);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getId());
+        assertEquals("Public Doc", response.getTitle());
+        assertEquals("PUBLIC", response.getVisibility());
+    }
+
+    @Test
+    void getDocumentById_Private_OwnerSuccess() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails ownerDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                userId,
+                "owner@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.getDocumentById(docId, ownerDetails);
+
+        assertNotNull(response);
+        assertEquals(docId, response.getId());
+        assertEquals("Private Doc", response.getTitle());
+        assertEquals("PRIVATE", response.getVisibility());
+    }
+
+    @Test
+    void getDocumentById_Private_NonOwnerForbidden() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Private Doc")
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        vn.ai_study_hub_api.security.CustomUserDetails otherUserDetails = new vn.ai_study_hub_api.security.CustomUserDetails(
+                UUID.randomUUID(),
+                "other@example.com",
+                "hashed-password",
+                true,
+                Collections.singletonList(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
+        );
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, otherUserDetails)
+        );
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+    }
+
+    @Test
+    void getDocumentById_Private_GuestUnauthorized() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getDocumentById(docId, null)
+        );
+
+        assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatus());
+    }
+
+    @Test
     void getDownloadAccess_GuestUnauthorized() {
         UUID docId = UUID.randomUUID();
         AppException exception = assertThrows(AppException.class, () ->
@@ -1032,19 +1158,6 @@ public class DocumentServiceImplTest {
         when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
 
-        // Mock WebClient call
-        WebClient.RequestBodyUriSpec requestBodyUriSpec = mock(WebClient.RequestBodyUriSpec.class);
-        WebClient.RequestBodySpec requestBodySpec = mock(WebClient.RequestBodySpec.class);
-        WebClient.RequestHeadersSpec requestHeadersSpec = mock(WebClient.RequestHeadersSpec.class);
-        WebClient.ResponseSpec responseSpec = mock(WebClient.ResponseSpec.class);
-
-        when(webClient.post()).thenReturn(requestBodyUriSpec);
-        when(webClient.patch()).thenReturn(requestBodyUriSpec);
-        when(requestBodyUriSpec.uri(anyString())).thenReturn(requestBodySpec);
-        when(requestBodySpec.contentType(any())).thenReturn(requestBodySpec);
-        when(requestBodySpec.bodyValue(any())).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.toBodilessEntity()).thenReturn(Mono.just(ResponseEntity.ok().build()));
 
         documentService.approveDocument(documentId);
 
@@ -1148,6 +1261,47 @@ public class DocumentServiceImplTest {
         assertEquals("New Description", response.getDescription());
         assertEquals("PRIVATE", response.getVisibility());
         verify(documentRepository, times(1)).save(doc);
+    }
+
+    @Test
+    void updateDocument_Success_PrivateToPublic_TriggersModeration() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .title("Old Title")
+                .fileUrl("owner-id/doc.pdf")
+                .fileType("pdf")
+                .fileSizeBytes(1024L)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .tags(new java.util.ArrayList<>())
+                .build();
+
+        vn.ai_study_hub_api.controller.request.UpdateDocumentRequest request =
+                new vn.ai_study_hub_api.controller.request.UpdateDocumentRequest();
+        request.setVisibility("PUBLIC");
+
+        UserEntity admin = UserEntity.builder()
+                .id(UUID.randomUUID())
+                .email("admin@example.com")
+                .fullName("Admin User")
+                .role(UserRole.ADMIN)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(docId)).thenReturn(Optional.of(doc));
+        when(userRepository.findAllByRole(UserRole.ADMIN)).thenReturn(List.of(admin));
+        when(documentRepository.save(any(DocumentEntity.class))).thenReturn(doc);
+
+        vn.ai_study_hub_api.controller.response.DocumentResponse response =
+                documentService.updateDocument(docId, request, userId);
+
+        assertNotNull(response);
+        assertEquals("PUBLIC", response.getVisibility());
+        assertEquals("PENDING", response.getStatus());
+        verify(documentRepository, times(1)).save(doc);
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+        verify(moderationStreamProducer, times(1)).enqueue(docId);
     }
 
     @Test

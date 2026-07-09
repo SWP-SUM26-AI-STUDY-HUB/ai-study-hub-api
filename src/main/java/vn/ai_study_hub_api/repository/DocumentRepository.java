@@ -56,4 +56,12 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
             "d.created_at DESC",
             nativeQuery = true)
     List<UUID> findRecommendedDocumentIds(@Param("tagIds") List<Integer> tagIds);
+
+    @Query("SELECT d FROM DocumentEntity d WHERE d.uploader.id = :uploaderId AND d.visibility = :visibility AND d.status = :status AND d.deletedAt IS NULL")
+    org.springframework.data.domain.Page<DocumentEntity> findPublicDocumentsByUploaderId(
+            @Param("uploaderId") UUID uploaderId,
+            @Param("visibility") DocumentVisibility visibility,
+            @Param("status") DocumentStatus status,
+            org.springframework.data.domain.Pageable pageable);
 }
+

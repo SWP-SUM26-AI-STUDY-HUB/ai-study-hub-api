@@ -36,6 +36,7 @@ public class ReviewEntity {
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
+    @Column(name = "updated_at")
+    @org.hibernate.annotations.UpdateTimestamp
     private LocalDateTime updatedAt;
 }

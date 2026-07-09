@@ -32,6 +32,7 @@ public interface DocumentService {
     void deleteDocument(UUID documentId, UUID userId);
 
     vn.ai_study_hub_api.controller.response.DocumentAccessResponse getPreviewAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
+    DocumentResponse getDocumentById(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
 
     vn.ai_study_hub_api.controller.response.DocumentAccessResponse getDownloadAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
 
@@ -44,4 +45,13 @@ public interface DocumentService {
     List<DocumentResponse> getRecommendedDocuments(UUID userId);
 
     void triggerFastApiAsync(UUID documentId);
+
+    void saveDocument(UUID documentId, UUID userId);
+
+    void unsaveDocument(UUID documentId, UUID userId);
+
+    org.springframework.data.domain.Page<DocumentResponse> getSavedDocuments(UUID userId, int page, int size);
+
+    org.springframework.data.domain.Page<DocumentResponse> getPublicDocumentsByUser(UUID authorId, int page, int size);
 }
+
