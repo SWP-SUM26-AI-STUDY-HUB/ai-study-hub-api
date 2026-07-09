@@ -661,7 +661,8 @@ public class DocumentServiceImpl implements DocumentService {
         documentRepository.save(document);
 
         notifyOwner(document, "Document Approved",
-                String.format("Your document '%s' has been approved and is now public.", document.getTitle()));
+                String.format("Your document '%s' has been approved and is now public.", document.getTitle()),
+                "DOCUMENT_APPROVED");
 
         log.info("Document {} approved -> PROCESSING. Flipping RAG visibility to public + indexing.", documentId);
         // Flip RAG chunk metadata to public, then embed pending chunks (/index).
@@ -694,7 +695,8 @@ public class DocumentServiceImpl implements DocumentService {
         documentRepository.save(document);
 
         notifyOwner(document, "Document Rejected",
-                String.format("Your document has been rejected. Reason: %s", reason.trim()));
+                String.format("Your document has been rejected. Reason: %s", reason.trim()),
+                "DOCUMENT_REJECTED");
 
         log.info("Document {} rejected -> REJECTED. Notifying owner + purging extracted/indexed chunks from RAG.", documentId);
         deleteFastApiVectorsAsync(documentId);
@@ -794,11 +796,13 @@ public class DocumentServiceImpl implements DocumentService {
         return filename.substring(filename.lastIndexOf('.') + 1);
     }
 
-    private void notifyOwner(DocumentEntity document, String title, String content) {
+    private void notifyOwner(DocumentEntity document, String title, String content, String type) {
         NotificationEntity notification = NotificationEntity.builder()
                 .user(document.getUploader())
                 .title(title)
                 .content(content)
+                .type(type)
+                .targetId(document.getId().toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);
