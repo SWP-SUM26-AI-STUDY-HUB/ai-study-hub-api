@@ -234,6 +234,8 @@ public class PaymentServiceImpl implements PaymentService {
                     .user(user)
                     .title("Nâng cấp gói cước thành công")
                     .content("Chúc mừng! Tài khoản của bạn đã được nâng cấp lên gói " + planName + " thành công. Hạn sử dụng của bạn là đến " + user.getPlanExpiresAt())
+                    .type("PLAN_UPGRADED")
+                    .targetId(invoice.getPlanId() != null ? invoice.getPlanId().toString() : "Premium")
                     .isRead(false)
                     .build());
         } else {

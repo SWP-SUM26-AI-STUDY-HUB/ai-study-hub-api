@@ -19,6 +19,9 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
 
     Optional<UserEntity> findByEmail(String email);
+    
+    java.util.List<UserEntity> findByPlanExpiresAtBetweenAndPlanIdIsNotNull(java.time.LocalDateTime start, java.time.LocalDateTime end);
+    
     boolean existsByEmail(String email);
     List<UserEntity> findAllByRole(UserRole role);
 
