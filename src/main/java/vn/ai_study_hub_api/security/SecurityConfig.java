@@ -80,6 +80,7 @@ public class SecurityConfig {
                                 "/api/v1/auth/google/callback",
                                 "/api/v1/auth/**",
                                 "/api/v1/documents/search",
+                                "/api/v1/documents/user/*",
                                 "/api/v1/documents/trending",
                                 "/api/v1/documents/*/preview",
                                 "/api/v1/internal/**",

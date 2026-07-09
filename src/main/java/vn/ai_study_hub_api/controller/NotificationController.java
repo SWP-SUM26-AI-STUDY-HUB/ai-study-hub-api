@@ -43,6 +43,8 @@ public class NotificationController {
                         .title(n.getTitle())
                         .content(n.getContent())
                         .isRead(n.getIsRead())
+                        .type(n.getType())
+                        .targetId(n.getTargetId())
                         .createdAt(n.getCreatedAt() != null ? n.getCreatedAt() : java.time.LocalDateTime.now())
                         .build())
                 .collect(Collectors.toList());
