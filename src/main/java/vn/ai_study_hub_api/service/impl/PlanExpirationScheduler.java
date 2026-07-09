@@ -27,9 +27,6 @@ public class PlanExpirationScheduler {
 
     private static final String EXPIRATION_NOTIFICATION_TITLE = "Gói cước sắp hết hạn";
 
-    /**
-     * Chạy mỗi ngày lúc 8h sáng (Asia/Ho_Chi_Minh).
-     */
     @Scheduled(cron = "0 0 8 * * *")
     @Transactional
     public void checkExpiringPlans() {
@@ -47,12 +44,10 @@ public class PlanExpirationScheduler {
 
         log.info("Found {} users with plans expiring within 3 days.", expiringUsers.size());
 
-        // check đã gửi notification hôm nay chưa
         LocalDateTime todayStart = now.toLocalDate().atStartOfDay();
 
         int notificationCount = 0;
         for (UserEntity user : expiringUsers) {
-            // Tránh gửi trùng
             boolean alreadyNotified = notificationRepository
                     .existsByUserIdAndTitleAndCreatedAtAfter(user.getId(), EXPIRATION_NOTIFICATION_TITLE, todayStart);
 

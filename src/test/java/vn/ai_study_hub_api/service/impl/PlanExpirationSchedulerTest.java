@@ -122,7 +122,6 @@ public class PlanExpirationSchedulerTest {
 
         when(userRepository.findByPlanExpiresAtBetweenAndPlanIdIsNotNull(any(), any()))
                 .thenReturn(List.of(user1, user2));
-        // user1 already notified, user2 not
         when(notificationRepository.existsByUserIdAndTitleAndCreatedAtAfter(eq(userId1), any(), any()))
                 .thenReturn(true);
         when(notificationRepository.existsByUserIdAndTitleAndCreatedAtAfter(eq(userId2), any(), any()))
@@ -136,7 +135,6 @@ public class PlanExpirationSchedulerTest {
 
         NotificationEntity notification = captor.getValue();
         assertEquals(user2, notification.getUser());
-        // plan not found → fallback "Premium"
         assertTrue(notification.getContent().contains("Premium"));
     }
 }
