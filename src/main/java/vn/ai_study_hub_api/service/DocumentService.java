@@ -45,4 +45,13 @@ public interface DocumentService {
     List<DocumentResponse> getRecommendedDocuments(UUID userId);
 
     void triggerFastApiAsync(UUID documentId);
+
+    void saveDocument(UUID documentId, UUID userId);
+
+    void unsaveDocument(UUID documentId, UUID userId);
+
+    org.springframework.data.domain.Page<DocumentResponse> getSavedDocuments(UUID userId, int page, int size);
+
+    org.springframework.data.domain.Page<DocumentResponse> getPublicDocumentsByUser(UUID authorId, int page, int size);
 }
+

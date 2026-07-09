@@ -26,5 +26,6 @@ public class DocumentResponse {
     private Map<Integer, String> tags;
     private UploaderResponse uploader;
     private String visibility;
+    private Boolean isSaved;
     private LocalDateTime createdAt;
 }

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,9 +20,8 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
 
     Optional<UserEntity> findByEmail(String email);
-    
-    java.util.List<UserEntity> findByPlanExpiresAtBetweenAndPlanIdIsNotNull(java.time.LocalDateTime start, java.time.LocalDateTime end);
-    
+
+    List<UserEntity> findByPlanExpiresAtBetweenAndPlanIdIsNotNull(LocalDateTime start, LocalDateTime end);
     boolean existsByEmail(String email);
     List<UserEntity> findAllByRole(UserRole role);
 

@@ -79,7 +79,7 @@ public class ReviewServiceImpl implements ReviewService {
             reviewerName = reviewer.getEmail();
         }
 
-        // Gửi notification cho chủ document (không gửi nếu tự review)
+        // Gửi notification cho chủ document
         UserEntity uploader = document.getUploader();
         if (uploader != null && !uploader.getId().equals(userId)) {
             String notifContent = String.format("%s đã đánh giá %d⭐ cho tài liệu '%s'",

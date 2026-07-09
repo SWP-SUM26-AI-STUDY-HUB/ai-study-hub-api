@@ -30,6 +30,13 @@ import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
+import vn.ai_study_hub_api.repository.SavedDocumentRepository;
+import vn.ai_study_hub_api.model.SavedDocumentEntity;
+import vn.ai_study_hub_api.controller.response.UploaderResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.DocumentService;
 import vn.ai_study_hub_api.service.UploadProvider;
@@ -67,6 +74,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final UploadProvider uploadProvider;
     private final StoragePlanRepository storagePlanRepository;
     private final ReviewRepository reviewRepository;
+    private final SavedDocumentRepository savedDocumentRepository;
     private final DocumentPreviewGenerator previewGenerator;
     private final DocumentRagClient ragClient;
     private final DocumentMapper documentMapper;
@@ -212,6 +220,8 @@ public class DocumentServiceImpl implements DocumentService {
                     .user(admin)
                     .title(title)
                     .content(content)
+                    .type("DOCUMENT_PENDING")
+                    .targetId(document.getId().toString())
                     .isRead(false)
                     .build();
             notificationRepository.save(notification);
@@ -660,6 +670,18 @@ public class DocumentServiceImpl implements DocumentService {
         document.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(document);
 
+        // taạo thông báo cho người up
+        String title = "Document Approved";
+        String content = String.format("Your document '%s' has been approved and is now public.", document.getTitle());
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(document.getUploader())
+                .title(title)
+                .content(content)
+                .type("DOCUMENT_APPROVED")
+                .targetId(documentId.toString())
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
         notifyOwner(document, "Document Approved",
                 String.format("Your document '%s' has been approved and is now public.", document.getTitle()),
                 "DOCUMENT_APPROVED");
@@ -694,6 +716,18 @@ public class DocumentServiceImpl implements DocumentService {
         document.setRejectionReason(reason.trim());
         documentRepository.save(document);
 
+        // tạo thông báo cho người up
+        String title = "Document Rejected";
+        String content = String.format("Your document has been rejected. Reason: %s", reason.trim());
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(document.getUploader())
+                .title(title)
+                .content(content)
+                .type("DOCUMENT_REJECTED")
+                .targetId(documentId.toString())
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
         notifyOwner(document, "Document Rejected",
                 String.format("Your document has been rejected. Reason: %s", reason.trim()),
                 "DOCUMENT_REJECTED");
@@ -788,6 +822,110 @@ public class DocumentServiceImpl implements DocumentService {
         return storagePath.substring(0, lastDot) + "_preview" + storagePath.substring(lastDot);
     }
 
+    private DocumentResponse mapToDocumentResponse(DocumentEntity doc) {
+        UploaderResponse uploaderResponse = null;
+        if (doc.getUploader() != null) {
+            String finalUploaderName = doc.getUploader().getFullName();
+            if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
+                finalUploaderName = doc.getUploader().getEmail();
+            }
+            uploaderResponse = UploaderResponse.builder()
+                    .id(doc.getUploader().getId())
+                    .fullName(finalUploaderName)
+                    .avatarUrl(doc.getUploader().getAvatarUrl())
+                    .build();
+        }
+
+        Map<Integer, String> tags = getVisibleTags(doc);
+
+        UUID currentUserId = getCurrentUserId();
+        boolean isSaved = false;
+        if (currentUserId != null && savedDocumentRepository != null) {
+            isSaved = savedDocumentRepository.existsByUserIdAndDocumentId(currentUserId, doc.getId());
+        }
+
+        return DocumentResponse.builder()
+                .id(doc.getId())
+                .title(doc.getTitle())
+                .fileName(doc.getTitle())
+                .fileUrl(doc.getFileUrl())
+                .fileSize(doc.getFileSizeBytes())
+                .fileType(doc.getFileType())
+                .status(doc.getStatus() != null ? doc.getStatus().name() : null)
+                .description(doc.getDescription())
+                .tags(tags)
+                .uploader(uploaderResponse)
+                .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
+                .isSaved(isSaved)
+                .createdAt(doc.getCreatedAt())
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public void saveDocument(UUID documentId, UUID userId) {
+        log.info("Request by user {} to save document {}", userId, documentId);
+        
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found with ID: " + documentId));
+
+        if (document.getDeletedAt() != null) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Cannot save a deleted document");
+        }
+
+        if (!DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Only completed documents can be saved");
+        }
+
+        if (!DocumentVisibility.PUBLIC.equals(document.getVisibility()) && 
+            (document.getUploader() == null || !document.getUploader().getId().equals(userId))) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You do not have permission to save this private document");
+        }
+
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
+
+        if (savedDocumentRepository.existsByUserIdAndDocumentId(userId, documentId)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Document is already saved");
+        }
+
+        SavedDocumentEntity savedDocument = SavedDocumentEntity.builder()
+                .user(user)
+                .document(document)
+                .build();
+
+        savedDocumentRepository.save(savedDocument);
+        log.info("Successfully saved document {} for user {}", documentId, userId);
+    }
+
+    @Override
+    @Transactional
+    public void unsaveDocument(UUID documentId, UUID userId) {
+        log.info("Request by user {} to unsave document {}", userId, documentId);
+        
+        if (!savedDocumentRepository.existsByUserIdAndDocumentId(userId, documentId)) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Saved document relationship not found");
+        }
+
+        savedDocumentRepository.deleteByUserIdAndDocumentId(userId, documentId);
+        log.info("Successfully unsaved document {} for user {}", documentId, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentResponse> getSavedDocuments(UUID userId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("savedAt").descending());
+        Page<SavedDocumentEntity> savedDocsPage = savedDocumentRepository.findByUserId(userId, pageable);
+        return savedDocsPage.map(savedDoc -> mapToDocumentResponse(savedDoc.getDocument()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<DocumentResponse> getPublicDocumentsByUser(UUID authorId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Page<DocumentEntity> docsPage = documentRepository.findPublicDocumentsByUploaderId(
+                authorId, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED, pageable);
+        return docsPage.map(this::mapToDocumentResponse);
     /** Returns the substring after the last dot, or empty when none/no filename. */
     private String getFileExtension(String filename) {
         if (filename == null || filename.lastIndexOf('.') == -1) {
@@ -808,3 +946,4 @@ public class DocumentServiceImpl implements DocumentService {
         notificationRepository.save(notification);
     }
 }
+

@@ -177,6 +177,8 @@ CREATE TABLE "notifications" (
   "title" varchar(255) NOT NULL,
   "content" text NOT NULL,
   "is_read" boolean DEFAULT false,
+  "type" varchar(50),
+  "target_id" varchar(255),
   "created_at" timestamp DEFAULT (now())
 );
 
@@ -242,3 +244,15 @@ ALTER TABLE "notifications" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id"
 CREATE INDEX document_chunks_doc_id_idx ON document_chunks (document_id);
 
 ALTER TABLE "users" ADD COLUMN "preferred_tag_ids" integer[];
+
+CREATE TABLE "saved_documents" (
+  "id" uuid PRIMARY KEY,
+  "user_id" uuid NOT NULL,
+  "document_id" uuid NOT NULL,
+  "saved_at" timestamp DEFAULT (now()),
+  CONSTRAINT "unique_user_document_save" UNIQUE ("user_id", "document_id")
+);
+
+ALTER TABLE "saved_documents" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE;
+ALTER TABLE "saved_documents" ADD FOREIGN KEY ("document_id") REFERENCES "documents" ("id") ON DELETE CASCADE;
+
