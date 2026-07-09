@@ -32,7 +32,6 @@ import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.SavedDocumentRepository;
 import vn.ai_study_hub_api.model.SavedDocumentEntity;
-import vn.ai_study_hub_api.controller.response.UploaderResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -670,18 +669,6 @@ public class DocumentServiceImpl implements DocumentService {
         document.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(document);
 
-        // taạo thông báo cho người up
-        String title = "Document Approved";
-        String content = String.format("Your document '%s' has been approved and is now public.", document.getTitle());
-        NotificationEntity notification = NotificationEntity.builder()
-                .user(document.getUploader())
-                .title(title)
-                .content(content)
-                .type("DOCUMENT_APPROVED")
-                .targetId(documentId.toString())
-                .isRead(false)
-                .build();
-        notificationRepository.save(notification);
         notifyOwner(document, "Document Approved",
                 String.format("Your document '%s' has been approved and is now public.", document.getTitle()),
                 "DOCUMENT_APPROVED");
@@ -716,18 +703,6 @@ public class DocumentServiceImpl implements DocumentService {
         document.setRejectionReason(reason.trim());
         documentRepository.save(document);
 
-        // tạo thông báo cho người up
-        String title = "Document Rejected";
-        String content = String.format("Your document has been rejected. Reason: %s", reason.trim());
-        NotificationEntity notification = NotificationEntity.builder()
-                .user(document.getUploader())
-                .title(title)
-                .content(content)
-                .type("DOCUMENT_REJECTED")
-                .targetId(documentId.toString())
-                .isRead(false)
-                .build();
-        notificationRepository.save(notification);
         notifyOwner(document, "Document Rejected",
                 String.format("Your document has been rejected. Reason: %s", reason.trim()),
                 "DOCUMENT_REJECTED");
@@ -823,22 +798,9 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private DocumentResponse mapToDocumentResponse(DocumentEntity doc) {
-        UploaderResponse uploaderResponse = null;
-        if (doc.getUploader() != null) {
-            String finalUploaderName = doc.getUploader().getFullName();
-            if (finalUploaderName == null || finalUploaderName.trim().isEmpty()) {
-                finalUploaderName = doc.getUploader().getEmail();
-            }
-            uploaderResponse = UploaderResponse.builder()
-                    .id(doc.getUploader().getId())
-                    .fullName(finalUploaderName)
-                    .avatarUrl(doc.getUploader().getAvatarUrl())
-                    .build();
-        }
+        Map<Integer, String> tags = documentMapper.getVisibleTags(doc);
 
-        Map<Integer, String> tags = getVisibleTags(doc);
-
-        UUID currentUserId = getCurrentUserId();
+        UUID currentUserId = documentMapper.getCurrentUserId();
         boolean isSaved = false;
         if (currentUserId != null && savedDocumentRepository != null) {
             isSaved = savedDocumentRepository.existsByUserIdAndDocumentId(currentUserId, doc.getId());
@@ -854,7 +816,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .status(doc.getStatus() != null ? doc.getStatus().name() : null)
                 .description(doc.getDescription())
                 .tags(tags)
-                .uploader(uploaderResponse)
+                .uploader(documentMapper.toUploaderResponse(doc))
                 .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
                 .isSaved(isSaved)
                 .createdAt(doc.getCreatedAt())
