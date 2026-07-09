@@ -926,6 +926,8 @@ public class DocumentServiceImpl implements DocumentService {
         Page<DocumentEntity> docsPage = documentRepository.findPublicDocumentsByUploaderId(
                 authorId, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED, pageable);
         return docsPage.map(this::mapToDocumentResponse);
+    }
+
     /** Returns the substring after the last dot, or empty when none/no filename. */
     private String getFileExtension(String filename) {
         if (filename == null || filename.lastIndexOf('.') == -1) {
