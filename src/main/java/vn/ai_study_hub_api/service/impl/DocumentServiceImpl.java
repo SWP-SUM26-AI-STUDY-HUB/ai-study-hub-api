@@ -296,6 +296,8 @@ public class DocumentServiceImpl implements DocumentService {
                     .user(admin)
                     .title(title)
                     .content(content)
+                    .type("DOCUMENT_PENDING")
+                    .targetId(document.getId().toString())
                     .isRead(false)
                     .build();
             notificationRepository.save(notification);
@@ -902,6 +904,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .user(document.getUploader())
                 .title(title)
                 .content(content)
+                .type("DOCUMENT_APPROVED")
+                .targetId(documentId.toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);
@@ -942,6 +946,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .user(document.getUploader())
                 .title(title)
                 .content(content)
+                .type("DOCUMENT_REJECTED")
+                .targetId(documentId.toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);

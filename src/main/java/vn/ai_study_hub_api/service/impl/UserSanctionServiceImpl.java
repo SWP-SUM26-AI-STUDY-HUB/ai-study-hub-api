@@ -84,6 +84,8 @@ public class UserSanctionServiceImpl implements UserSanctionService {
                 .user(user)
                 .title("Tài khoản bị khóa (Banned)")
                 .content(reason)
+                .type("ACCOUNT_BANNED")
+                .targetId(user.getId().toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);
@@ -115,6 +117,8 @@ public class UserSanctionServiceImpl implements UserSanctionService {
                 .user(user)
                 .title("Cảnh báo tài khoản (Warn)")
                 .content(String.format("Bạn đã bị cảnh báo %d lần. Lý do: %s", warnCount, reason))
+                .type("ACCOUNT_WARNING")
+                .targetId(user.getId().toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);
@@ -165,6 +169,8 @@ public class UserSanctionServiceImpl implements UserSanctionService {
                 .user(user)
                 .title("Tài khoản được mở khóa (Reactivated)")
                 .content("Tài khoản của bạn đã được quản trị viên mở khóa và kích hoạt lại.")
+                .type("ACCOUNT_ACTIVATED")
+                .targetId(user.getId().toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);

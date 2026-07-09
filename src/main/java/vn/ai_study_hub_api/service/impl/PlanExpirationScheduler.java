@@ -72,6 +72,8 @@ public class PlanExpirationScheduler {
                     .user(user)
                     .title(EXPIRATION_NOTIFICATION_TITLE)
                     .content(content)
+                    .type("PLAN_EXPIRING")
+                    .targetId(user.getPlanId() != null ? user.getPlanId().toString() : "Premium")
                     .isRead(false)
                     .build();
             notificationRepository.save(notification);

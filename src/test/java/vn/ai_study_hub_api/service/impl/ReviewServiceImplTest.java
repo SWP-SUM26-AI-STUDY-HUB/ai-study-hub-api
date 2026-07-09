@@ -93,6 +93,8 @@ public class ReviewServiceImplTest {
         NotificationEntity notification = captor.getValue();
         assertEquals("Bạn nhận được đánh giá mới", notification.getTitle());
         assertEquals(uploader, notification.getUser());
+        assertEquals("NEW_REVIEW", notification.getType());
+        assertEquals(documentId.toString(), notification.getTargetId());
         assertTrue(notification.getContent().contains("Reviewer Name"));
         assertTrue(notification.getContent().contains("5⭐"));
         assertTrue(notification.getContent().contains("Test Document"));

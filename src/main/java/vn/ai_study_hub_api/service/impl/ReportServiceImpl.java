@@ -94,6 +94,8 @@ public class ReportServiceImpl implements ReportService {
                     .user(admin)
                     .title(title)
                     .content(content)
+                    .type("REPORT_SUBMITTED")
+                    .targetId(document.getId().toString())
                     .isRead(false)
                     .build();
             notificationRepository.save(notification);
@@ -153,6 +155,8 @@ public class ReportServiceImpl implements ReportService {
                 .user(uploader)
                 .title(notificationTitle)
                 .content(notificationContent)
+                .type("DOCUMENT_VIOLATION_DELETED")
+                .targetId(document.getId().toString())
                 .isRead(false)
                 .build();
         notificationRepository.save(notification);

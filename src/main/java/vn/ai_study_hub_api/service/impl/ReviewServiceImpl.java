@@ -92,6 +92,8 @@ public class ReviewServiceImpl implements ReviewService {
                     .user(uploader)
                     .title("Bạn nhận được đánh giá mới")
                     .content(notifContent)
+                    .type("NEW_REVIEW")
+                    .targetId(documentId.toString())
                     .isRead(false)
                     .build();
             notificationRepository.save(notification);
