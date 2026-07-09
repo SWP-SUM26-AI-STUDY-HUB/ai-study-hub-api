@@ -9,10 +9,16 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import vn.ai_study_hub_api.controller.request.PaymentRequest;
+import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.response.PaymentResponse;
+import vn.ai_study_hub_api.controller.response.TransactionHistoryResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.service.PaymentService;
+import io.swagger.v3.oas.annotations.Operation;
+
+import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/payments")
@@ -68,5 +74,17 @@ public class PaymentController {
         String responseCode = queryParams.get("vnp_ResponseCode");
         String targetUrl = frontendUrl + "?paymentStatus=" + ("00".equals(responseCode) ? "success" : "failed");
         return new org.springframework.web.servlet.view.RedirectView(targetUrl);
+    }
+
+    @GetMapping("/history")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get transaction history", description = "Retrieves all transaction records (invoices) for the currently authenticated user.")
+    public ApiResponse<List<TransactionHistoryResponse>> getTransactionHistory(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails userDetails)) {
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+
+        List<TransactionHistoryResponse> history = paymentService.getTransactionHistory(userDetails.getId());
+        return ApiResponse.success(history, "Transaction history retrieved successfully");
     }
 }
