@@ -220,6 +220,8 @@ public class DocumentServiceImpl implements DocumentService {
                     .user(admin)
                     .title(title)
                     .content(content)
+                    .type("DOCUMENT_PENDING")
+                    .targetId(document.getId().toString())
                     .isRead(false)
                     .build();
             notificationRepository.save(notification);
@@ -668,6 +670,18 @@ public class DocumentServiceImpl implements DocumentService {
         document.setStatus(DocumentStatus.PROCESSING);
         documentRepository.save(document);
 
+        // taạo thông báo cho người up
+        String title = "Document Approved";
+        String content = String.format("Your document '%s' has been approved and is now public.", document.getTitle());
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(document.getUploader())
+                .title(title)
+                .content(content)
+                .type("DOCUMENT_APPROVED")
+                .targetId(documentId.toString())
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
         notifyOwner(document, "Document Approved",
                 String.format("Your document '%s' has been approved and is now public.", document.getTitle()));
 
@@ -701,6 +715,18 @@ public class DocumentServiceImpl implements DocumentService {
         document.setRejectionReason(reason.trim());
         documentRepository.save(document);
 
+        // tạo thông báo cho người up
+        String title = "Document Rejected";
+        String content = String.format("Your document has been rejected. Reason: %s", reason.trim());
+        NotificationEntity notification = NotificationEntity.builder()
+                .user(document.getUploader())
+                .title(title)
+                .content(content)
+                .type("DOCUMENT_REJECTED")
+                .targetId(documentId.toString())
+                .isRead(false)
+                .build();
+        notificationRepository.save(notification);
         notifyOwner(document, "Document Rejected",
                 String.format("Your document has been rejected. Reason: %s", reason.trim()));
 

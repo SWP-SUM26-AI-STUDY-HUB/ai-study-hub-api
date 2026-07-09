@@ -10,9 +10,11 @@ import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
 import vn.ai_study_hub_api.model.DocumentVisibility;
+import vn.ai_study_hub_api.model.NotificationEntity;
 import vn.ai_study_hub_api.model.ReviewEntity;
 import vn.ai_study_hub_api.model.UserEntity;
 import vn.ai_study_hub_api.repository.DocumentRepository;
+import vn.ai_study_hub_api.repository.NotificationRepository;
 import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.ReviewService;
@@ -29,6 +31,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewRepository reviewRepository;
     private final DocumentRepository documentRepository;
     private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
 
     @Override
     @Transactional
@@ -74,6 +77,26 @@ public class ReviewServiceImpl implements ReviewService {
         String reviewerName = reviewer.getFullName();
         if (reviewerName == null || reviewerName.isBlank()) {
             reviewerName = reviewer.getEmail();
+        }
+
+        // Gửi notification cho chủ document
+        UserEntity uploader = document.getUploader();
+        if (uploader != null && !uploader.getId().equals(userId)) {
+            String notifContent = String.format("%s đã đánh giá %d⭐ cho tài liệu '%s'",
+                    reviewerName, request.getRating(), document.getTitle());
+            if (request.getComment() != null && !request.getComment().isBlank()) {
+                notifContent += String.format(". Nhận xét: %s", request.getComment());
+            }
+
+            NotificationEntity notification = NotificationEntity.builder()
+                    .user(uploader)
+                    .title("Bạn nhận được đánh giá mới")
+                    .content(notifContent)
+                    .type("NEW_REVIEW")
+                    .targetId(documentId.toString())
+                    .isRead(false)
+                    .build();
+            notificationRepository.save(notification);
         }
 
         return ReviewResponse.builder()

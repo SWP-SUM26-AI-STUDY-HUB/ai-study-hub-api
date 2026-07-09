@@ -177,6 +177,8 @@ CREATE TABLE "notifications" (
   "title" varchar(255) NOT NULL,
   "content" text NOT NULL,
   "is_read" boolean DEFAULT false,
+  "type" varchar(50),
+  "target_id" varchar(255),
   "created_at" timestamp DEFAULT (now())
 );
 

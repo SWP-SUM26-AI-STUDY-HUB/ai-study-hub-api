@@ -32,6 +32,12 @@ public class NotificationEntity {
     @Builder.Default
     private Boolean isRead = false;
 
+    @Column(name = "type", length = 50)
+    private String type;
+
+    @Column(name = "target_id", length = 255)
+    private String targetId;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 }
