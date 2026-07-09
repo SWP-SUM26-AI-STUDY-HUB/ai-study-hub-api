@@ -74,7 +74,7 @@ public class DocumentMapper {
                 .collect(Collectors.toMap(TagEntity::getId, TagEntity::getLabel));
     }
 
-    private UUID getCurrentUserId() {
+    public UUID getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.isAuthenticated()
                 && !(authentication instanceof AnonymousAuthenticationToken)
