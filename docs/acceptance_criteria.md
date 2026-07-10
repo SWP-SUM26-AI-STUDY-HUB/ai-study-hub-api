@@ -377,11 +377,51 @@ For testing edge cases related to permissions and storage limits:
 - **When** The document deletion is executed successfully.
 - **Then** The system decrements the user's `storage_used` to $\max(0, U - S)$ bytes in the database.
 
+### 15. Onboarding Survey & Recommended Documents (F-DOC-10)
+
+> [!NOTE]
+> To personalize the user experience, users can select between 1 and 3 public tags as their preferences. The system then recommends **up to 20** public completed documents matching these tags, sorted by:
+> 1. Match count (descending)
+> 2. Average rating (descending, with non-reviewed documents sorted last)
+> 3. Creation date (descending, as the tiebreaker)
+
+#### Scenario 1: User saves preferred tags successfully (Happy Path)
+- **Given** The user is authenticated.
+- **When** The user submits a POST request to `/api/v1/users/preferred-tags` with a list of 1 to 3 public tag IDs (e.g., `[1, 2, 3]`).
+- **Then** The system saves the tag IDs as the user's preferred tags in the database.
+- **And** The system returns HTTP `200 OK` with a success message.
+
+#### Scenario 2: Saving preferred tags failed due to limit validation (Edge Case)
+- **Given** The user is authenticated.
+- **When** The user attempts to submit a list containing more than 3 tag IDs (e.g., `[1, 2, 3, 4]`).
+- **Then** The system validation blocks the request.
+- **And** The system returns HTTP `400 Bad Request` with an error message indicating a maximum of 3 tags.
+
+#### Scenario 3: Retrieving recommended documents sorted by preference ranking and capped at 20 (Happy Path)
+- **Given** The user is authenticated and has saved preferred tag IDs (e.g., `[101, 102]`).
+- **And** The database contains 25 active public completed documents matching these preferred tags.
+- **When** The user requests recommended documents (GET `/api/v1/documents/recommendations`).
+- **Then** The system retrieves all matching documents.
+- **And** The system sorts them by match count (descending), average rating (descending), and creation date (descending).
+- **And** The system caps the results to return **exactly 20 documents** (excluding the 5 lowest-ranked documents).
+- **And** The response returns HTTP `200 OK`.
+
+#### Scenario 4: Retrieving recommended documents with no preferred tags (Alternative Path)
+- **Given** The user is authenticated but has not completed the onboarding survey (preferred tags list is empty).
+- **When** The user requests recommended documents.
+- **Then** The system returns an empty list immediately.
+- **And** The response returns HTTP `200 OK`.
+
+#### Scenario 5: Access to recommendations blocked for guests (Edge Case / Security)
+- **Given** An unauthenticated guest visitor.
+- **When** The visitor attempts to call GET `/api/v1/documents/recommendations`.
+- **Then** The security chain blocks the request.
+- **And** The system returns HTTP `401 Unauthorized`.
 ---
 
 ## 🤝 PART 3: SOCIAL LEARNING & INTERACTION (F-SOC)
 
-### 15. Review and Rating (F-SOC-01)
+### 16. Review and Rating (F-SOC-01)
 
 #### Scenario 1: Rating and commenting on a public document (Happy Path)
 - **Given** An authenticated user is viewing an approved public document.
@@ -399,7 +439,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 16. Abuse & Content Reporting (F-SOC-02)
+### 17. Abuse & Content Reporting (F-SOC-02)
 
 #### Scenario 1: Submitting an abuse report (Happy Path)
 - **Given** An authenticated user is viewing a public document.
@@ -412,7 +452,7 @@ For testing edge cases related to permissions and storage limits:
 
 ## 🤖 PART 4: AI CHATBOT (F-AI-RAG)
 
-### 17. Multi-Document Contextual Chat (F-AI-01)
+### 18. Multi-Document Contextual Chat (F-AI-01)
 
 > [!NOTE]
 > To control API costs, the system uses the AI Guard middleware to intercept chat requests and block users who have exceeded their plan's daily chat limits.
@@ -440,7 +480,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 18. Single Document Contextual Chat (F-AI-02)
+### 19. Single Document Contextual Chat (F-AI-02)
 
 #### Scenario 1: Requesting a summary of an open document (Happy Path)
 - **Given** The user is viewing a document.
@@ -453,7 +493,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 19. Chat Session Management (F-AI-03)
+### 20. Chat Session Management (F-AI-03)
 
 #### Scenario 1: Viewing and renaming active chat sessions (Happy Path)
 - **Given** The user has active chat histories in the database.
@@ -471,7 +511,7 @@ For testing edge cases related to permissions and storage limits:
 
 ## 🛠️ PART 5: ADMIN DASHBOARD (F-ADM)
 
-### 20. Content Moderation (F-ADM-01)
+### 21. Content Moderation (F-ADM-01)
 
 #### Scenario 1: Admin approving a pending document (Happy Path)
 - **Given** The administrator is on the Admin Moderation Queue, and document `math_101.pdf` is `'pending'` with visibility `'public'`.
@@ -490,7 +530,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 21. Violation Review (F-ADM-02)
+### 23. Violation Review (F-ADM-02)
 
 #### Scenario 1: Resolving a report and deleting the document (Happy Path)
 - **Given** The admin is reviewing a pending report for `cheat_sheet.pdf` uploaded by User A.
@@ -508,7 +548,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 22. Account Warnings & Sanctions (F-ADM-03)
+### 23. Account Warnings & Sanctions (F-ADM-03)
 
 > [!CAUTION]
 > When an administrator bans an account, the system must immediately add all active session JWTs belonging to that user to the Redis Blacklist to terminate their session.
@@ -523,7 +563,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 23. Aggregation and Stats (F-ADM-04)
+### 24. Aggregation and Stats (F-ADM-04)
 
 #### Scenario 1: Loading metrics on the Admin Dashboard (Happy Path)
 - **Given** The administrator opens the Admin Dashboard.
@@ -535,11 +575,47 @@ For testing edge cases related to permissions and storage limits:
   - Sum of successful invoice revenues for the current month.
 - **And** The system renders these metrics on charts and tables in less than 2.0 seconds.
 
+### 25. Public Tag Management (F-ADM-05)
+
+> [!NOTE]
+> Creating a public tag is restricted to administrators. When a public tag is created, the system must automatically find and merge all existing user private tags with the same label to maintain consistency.
+
+#### Scenario 1: Admin successfully creates a new public tag (Happy Path)
+- **Given** The user is authenticated as an Administrator.
+- **When** The admin sends a POST request to `/api/v1/admin/tags` with a valid tag label `"Calculus"`.
+- **Then** The system verifies that the tag `"Calculus"` does not already exist as a public tag.
+- **And** The system creates and saves a new public tag in the database.
+- **And** The system evicts the public tags and trending documents cache.
+- **And** The system returns HTTP `201 Created` with the newly created public tag details.
+
+#### Scenario 2: Admin creates a public tag that merges existing private tags (Alternative Path)
+- **Given** The user is authenticated as an Administrator.
+- **And** There are several private tags created by users with the label `"Physics"`.
+- **When** The admin sends a POST request to `/api/v1/admin/tags` with the label `"Physics"`.
+- **Then** The system creates a new public tag with the label `"Physics"`.
+- **And** The system retrieves all matching private tags with the label `"Physics"`.
+- **And** The system reassigns all document mappings pointing to these private tags to the new public tag.
+- **And** The system deletes the document tag mappings and the private tag records from the database.
+- **And** The system evicts the cache.
+- **And** The system returns HTTP `201 Created` with the public tag details.
+
+#### Scenario 3: Tag creation rejected due to validation failure (Edge Case)
+- **Given** The user is authenticated as an Administrator.
+- **When** The admin attempts to create a public tag with an empty label or a label exceeding 30 characters.
+- **Then** The system validation blocks the request.
+- **And** The system returns HTTP `400 Bad Request` with a validation error message.
+
+#### Scenario 4: Tag creation blocked for non-admin users (Edge Case / Authorization)
+- **Given** A user authenticated as a regular Customer or an unauthenticated guest visitor.
+- **When** The user sends a POST request to `/api/v1/admin/tags` with the label `"Chemistry"`.
+- **Then** The security filter chain intercepts the request.
+- **And** The system blocks access and returns HTTP `403 Forbidden` (for customer) or `401 Unauthorized` (for guest).
+
 ---
 
 ## 💳 PART 6: SUBSCRIPTION & PAYMENT (F-MON)
 
-### 24. Subscription Purchase Flow (F-MON-01)
+### 26. Subscription Purchase Flow (F-MON-01)
 
 #### Scenario 1: Initiating upgrade and generating QR code (Happy Path)
 - **Given** The user is on the Free plan and is on the Pricing Page.
@@ -550,7 +626,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 25. Webhook Automation Flow (F-MON-02)
+### 27. Webhook Automation Flow (F-MON-02)
 
 > [!IMPORTANT]
 > Upgrading plans, extending expiration dates, and unlocking storage limits must be executed within a single Atomic Database Transaction block to prevent data inconsistencies in case of payment processing failures.
@@ -586,7 +662,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 26. Daily AI Limit Reset (F-MON-03)
+### 28. Daily AI Limit Reset (F-MON-03)
 
 #### Scenario 1: First chat request of the day initializes Redis key (Happy Path)
 - **Given** The user has not sent any chat queries today.
@@ -611,7 +687,7 @@ For testing edge cases related to permissions and storage limits:
 
 ---
 
-### 27. Check Subscription Expiration - Lazy Downgrade (F-MON-04)
+### 29. Check Subscription Expiration - Lazy Downgrade (F-MON-04)
 
 > [!NOTE]
 > The system utilizes a **Lazy Downgrade** mechanism. Subscription checks are not performed by periodic background cron jobs; instead, the check is triggered lazily when the user makes any API request after their expiration date.
@@ -642,6 +718,28 @@ For testing edge cases related to permissions and storage limits:
 - **And** The system updates the user's status to `'overlimitstorage'` in the database.
 - **And** The system blocks the API request.
 - **And** The system returns a warning page or an error status showing that storage is locked.
+
+### 30. Transaction History Retrieval (F-MON-05)
+
+#### Scenario 1: Successfully retrieving transaction history (Happy Path)
+- **Given** The user is authenticated and has a history of transaction records (invoices) in the system.
+- **When** The user requests their transaction history (sending a GET request to `/api/v1/payments/history`).
+- **Then** The system retrieves all invoice records belonging to the authenticated user from the database.
+- **And** The system retrieves all storage plans to map the plan names for the transaction descriptions.
+- **And** The system returns the list of transactions ordered by creation date descending.
+- **And** Each transaction record in the response contains the unique invoice ID (`id`), payment gateway reference (`transactionId`), amount, status, payment provider, description (`content` e.g., "Thanh toán nâng cấp tài khoản - Gói Premium"), creation date (`createdAt`), and completion date (`updatedAt`).
+
+#### Scenario 2: Retrieving empty transaction history (Alternative Path)
+- **Given** The user is authenticated and has no transaction records in the system.
+- **When** The user requests their transaction history.
+- **Then** The system queries the database and finds zero invoices for this user.
+- **And** The system returns an empty list with a success message.
+
+#### Scenario 3: Request blocked for unauthenticated visitor (Edge Case)
+- **Given** An unauthenticated guest visitor attempts to access the transaction history endpoint.
+- **When** The visitor sends a GET request to `/api/v1/payments/history`.
+- **Then** The security filter chain intercepts the request.
+- **And** The system blocks the request and returns HTTP `401 Unauthorized` with an access denied message.
 
 ---
 
