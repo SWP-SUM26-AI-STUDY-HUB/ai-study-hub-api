@@ -36,7 +36,7 @@ public class AdminUserController {
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Get user list with filtering and pagination", description = "Returns a paginated list of users filtered by search keyword, role, and status.")
-    public ApiResponse<Page<UserResponse>> getUsers(
+    public vn.ai_study_hub_api.controller.response.UserPageResponse getUsers(
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "role", required = false) UserRole role,
             @RequestParam(value = "status", required = false) UserStatus status,
@@ -45,7 +45,11 @@ public class AdminUserController {
         log.info("Admin request to get users list. Search: {}, Role: {}, Status: {}, Page: {}, Size: {}", search, role, status, page, size);
         Pageable pageable = PageRequest.of(page, size);
         Page<UserResponse> users = userService.getUsers(search, role, status, pageable);
-        return ApiResponse.success(users, "User list retrieved successfully.");
+        vn.ai_study_hub_api.controller.response.UserPageResponse pageResponse = new vn.ai_study_hub_api.controller.response.UserPageResponse();
+        pageResponse.setSuccess(true);
+        pageResponse.setMessage("User list retrieved successfully.");
+        pageResponse.setData(users);
+        return pageResponse;
     }
 
     @PostMapping("/{userId}/ban")

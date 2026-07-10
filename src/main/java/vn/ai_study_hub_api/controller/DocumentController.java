@@ -377,7 +377,7 @@ public class        DocumentController {
     @GetMapping("/saved")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Get list of saved documents", description = "Returns a paginated list of documents saved by the user.")
-    public ApiResponse<org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse>> getSavedDocuments(
+    public vn.ai_study_hub_api.controller.response.DocumentPageResponse getSavedDocuments(
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "10") int size) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -387,19 +387,27 @@ public class        DocumentController {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse> response = 
                 documentService.getSavedDocuments(userDetails.getId(), page, size);
-        return ApiResponse.success(response, "Saved documents retrieved successfully");
+        vn.ai_study_hub_api.controller.response.DocumentPageResponse pageResponse = new vn.ai_study_hub_api.controller.response.DocumentPageResponse();
+        pageResponse.setSuccess(true);
+        pageResponse.setMessage("Saved documents retrieved successfully");
+        pageResponse.setData(response);
+        return pageResponse;
     }
 
     @GetMapping("/user/{userId}")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Get public documents of a specific author", description = "Returns a paginated list of public, completed documents uploaded by the given user ID. Accessible publicly.")
-    public ApiResponse<org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse>> getPublicDocumentsByUser(
+    public vn.ai_study_hub_api.controller.response.DocumentPageResponse getPublicDocumentsByUser(
             @PathVariable("userId") UUID userId,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "10") int size) {
         org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse> response = 
                 documentService.getPublicDocumentsByUser(userId, page, size);
-        return ApiResponse.success(response, "Author's public documents retrieved successfully");
+        vn.ai_study_hub_api.controller.response.DocumentPageResponse pageResponse = new vn.ai_study_hub_api.controller.response.DocumentPageResponse();
+        pageResponse.setSuccess(true);
+        pageResponse.setMessage("Author's public documents retrieved successfully");
+        pageResponse.setData(response);
+        return pageResponse;
     }
 }
 
