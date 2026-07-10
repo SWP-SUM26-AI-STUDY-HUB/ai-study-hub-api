@@ -20,8 +20,11 @@ import vn.ai_study_hub_api.repository.NotificationRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.PaymentService;
+import vn.ai_study_hub_api.controller.response.TransactionHistoryResponse;
 
 import java.net.URLEncoder;
+import java.time.LocalDateTime;
+import java.util.stream.Collectors;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -248,5 +251,34 @@ public class PaymentServiceImpl implements PaymentService {
         response.put("RspCode", "00");
         response.put("Message", "Confirm Success");
         return response;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<TransactionHistoryResponse> getTransactionHistory(UUID userId) {
+        log.info("Getting transaction history for user: {}", userId);
+        
+        List<StoragePlanEntity> plans = storagePlanRepository.findAll();
+        Map<Integer, String> planNameMap = plans.stream()
+                .filter(p -> p.getId() != null)
+                .collect(Collectors.toMap(StoragePlanEntity::getId, StoragePlanEntity::getName, (a, b) -> a));
+
+        List<InvoiceEntity> invoices = invoiceRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+
+        return invoices.stream().map(invoice -> {
+            String planName = planNameMap.getOrDefault(invoice.getPlanId(), "Premium");
+            String content = "Thanh toán nâng cấp tài khoản - Gói " + planName;
+            
+            return TransactionHistoryResponse.builder()
+                    .id(invoice.getId())
+                    .transactionId(invoice.getTransactionId())
+                    .amount(invoice.getAmount())
+                    .status(invoice.getStatus())
+                    .provider(invoice.getProvider())
+                    .content(content)
+                    .createdAt(invoice.getCreatedAt() != null ? invoice.getCreatedAt() : LocalDateTime.now())
+                    .updatedAt(invoice.getUpdatedAt() != null ? invoice.getUpdatedAt() : LocalDateTime.now())
+                    .build();
+        }).collect(Collectors.toList());
     }
 }
