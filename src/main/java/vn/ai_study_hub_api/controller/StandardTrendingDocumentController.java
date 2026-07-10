@@ -23,11 +23,15 @@ public class StandardTrendingDocumentController {
     @GetMapping("/trending")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "View trending documents", description = "Retrieve public documents sorted by popularity (rating and reviews).")
-    public ApiResponse<Page<TrendingDocumentResponse>> getTrendingDocuments(
+    public vn.ai_study_hub_api.controller.response.TrendingDocumentPageResponse getTrendingDocuments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         Pageable pageable = PageRequest.of(page, size);
         Page<TrendingDocumentResponse> trendingDocuments = trendingDocumentService.getTrendingDocuments(pageable);
-        return ApiResponse.success(trendingDocuments, "Trending documents retrieved successfully");
+        vn.ai_study_hub_api.controller.response.TrendingDocumentPageResponse pageResponse = new vn.ai_study_hub_api.controller.response.TrendingDocumentPageResponse();
+        pageResponse.setSuccess(true);
+        pageResponse.setMessage("Trending documents retrieved successfully");
+        pageResponse.setData(trendingDocuments);
+        return pageResponse;
     }
 }
