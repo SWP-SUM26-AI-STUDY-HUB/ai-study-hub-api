@@ -1110,17 +1110,16 @@ public class DocumentServiceImplTest {
     }
 
     @Test
-    void searchPublicDocuments_NotFound() {
+    void searchPublicDocuments_NoResults() {
         String keyword = "notfound";
         when(documentRepository.searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED))
                 .thenReturn(List.of());
 
-        AppException exception = assertThrows(AppException.class, () ->
-                documentService.searchPublicDocuments(keyword)
-        );
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.searchPublicDocuments(keyword);
 
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("No documents found matching the keyword.", exception.getMessage());
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
         verify(documentRepository, times(1)).searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED);
     }
 

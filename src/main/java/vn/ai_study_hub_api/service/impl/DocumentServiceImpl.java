@@ -346,10 +346,6 @@ public class DocumentServiceImpl implements DocumentService {
 
         log.info("Found {} public documents matching keyword '{}'", results.size(), trimmedKeyword);
 
-        if (results.isEmpty()) {
-            throw new AppException(HttpStatus.NOT_FOUND, "No documents found matching the keyword.");
-        }
-
         return results.stream()
                 .map(documentMapper::toResponse)
                 .collect(Collectors.toList());
