@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: ai-study-hub-api
+  jackson:
+    time-zone: UTC
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   threads:
     virtual:
       enabled: true # Java 21 virtual threads: Tomcat request threads + @Async taskExecutor serve blocking I/O (RAG WebClient) without pinning OS threads

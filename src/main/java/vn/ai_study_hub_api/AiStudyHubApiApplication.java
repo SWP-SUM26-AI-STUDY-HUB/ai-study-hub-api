@@ -10,15 +10,11 @@ public class AiStudyHubApiApplication {
 
 	@PostConstruct
 	public void init() {
-		if ("Asia/Saigon".equals(TimeZone.getDefault().getID())) {
-			TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
-		}
+		TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
 	}
 
 	public static void main(String[] args) {
-		if ("Asia/Saigon".equals(TimeZone.getDefault().getID())) {
-			TimeZone.setDefault(TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
-		}
+		TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
 		SpringApplication.run(AiStudyHubApiApplication.class, args);
 	}
 
