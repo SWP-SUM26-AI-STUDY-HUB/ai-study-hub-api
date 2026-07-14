@@ -577,6 +577,7 @@ public class DocumentServiceImplTest {
         assertEquals("Test User", response.getUploaderName());
         assertEquals(4.5, response.getRating());
         assertEquals(12L, response.getReviewCount());
+        assertEquals(0, response.getDownloadCount());
         assertEquals(1, response.getTags().size());
         assertEquals("Math", response.getTags().get(0));
 
@@ -622,6 +623,7 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Math test document", response.getDescription());
+        assertEquals(0, response.getDownloadCount());
     }
 
     @Test
@@ -984,6 +986,9 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/download.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Math test document", response.getDescription());
+        assertEquals(1, response.getDownloadCount());
+        assertEquals(1, doc.getDownloadCount());
+        verify(documentRepository, times(1)).save(doc);
     }
 
     @Test
@@ -1021,6 +1026,9 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/download-owner.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Private description", response.getDescription());
+        assertEquals(1, response.getDownloadCount());
+        assertEquals(1, doc.getDownloadCount());
+        verify(documentRepository, times(1)).save(doc);
     }
 
     @Test
@@ -1058,6 +1066,9 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/download-admin.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Private description", response.getDescription());
+        assertEquals(1, response.getDownloadCount());
+        assertEquals(1, doc.getDownloadCount());
+        verify(documentRepository, times(1)).save(doc);
     }
 
     @Test

@@ -40,6 +40,7 @@ public class DocumentMapper {
                 .tags(getVisibleTags(doc))
                 .uploader(toUploaderResponse(doc))
                 .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
+                .downloadCount(doc.getDownloadCount())
                 .createdAt(doc.getCreatedAt())
                 .build();
     }
