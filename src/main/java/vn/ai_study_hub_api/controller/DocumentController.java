@@ -229,8 +229,10 @@ public class        DocumentController {
 
     @GetMapping("/recommendations")
     @ResponseStatus(HttpStatus.OK)
-    @Operation(summary = "Get recommended documents", description = "Returns public documents matching the user's preferred tags from the onboarding survey. Sorted by tag match count, average rating, and recency.")
-    public ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> getRecommendedDocuments() {
+    @Operation(summary = "Get recommended documents", description = "Returns a paginated list of public documents matching the user's preferred tags from the onboarding survey. Sorted by tag match count, average rating, and recency.")
+    public vn.ai_study_hub_api.controller.response.DocumentPageResponse getRecommendedDocuments(
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "8") int size) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
             log.error("Unauthorized recommendations attempt");
@@ -239,10 +241,14 @@ public class        DocumentController {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         UUID userId = userDetails.getId();
 
-        java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse> results =
-                documentService.getRecommendedDocuments(userId);
+        org.springframework.data.domain.Page<vn.ai_study_hub_api.controller.response.DocumentResponse> results =
+                documentService.getRecommendedDocuments(userId, page, size);
 
-        return ApiResponse.success(results, "Recommended documents retrieved successfully.");
+        vn.ai_study_hub_api.controller.response.DocumentPageResponse pageResponse = new vn.ai_study_hub_api.controller.response.DocumentPageResponse();
+        pageResponse.setSuccess(true);
+        pageResponse.setMessage("Recommended documents retrieved successfully");
+        pageResponse.setData(results);
+        return pageResponse;
     }
 
     @PutMapping("/{documentId}")
