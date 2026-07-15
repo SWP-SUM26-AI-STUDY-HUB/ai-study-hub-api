@@ -328,6 +328,15 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<DocumentResponse> getTrashDocuments(UUID userId) {
+        log.info("Fetching trash documents for user ID: {}", userId);
+        return documentRepository.findSoftDeletedDocumentsByUploaderId(userId).stream()
+                .map(documentMapper::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<DocumentResponse> searchPublicDocuments(String keyword) {
         log.info("Searching public documents with keyword: '{}'", keyword);
 

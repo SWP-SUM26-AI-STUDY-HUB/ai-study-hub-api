@@ -69,6 +69,9 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
     @Query("SELECT d FROM DocumentEntity d WHERE d.deletedAt IS NOT NULL AND d.deletedAt < :cutoff")
     List<DocumentEntity> findSoftDeletedBefore(@Param("cutoff") LocalDateTime cutoff);
 
+    @Query("SELECT d FROM DocumentEntity d WHERE d.uploader.id = :uploaderId AND d.deletedAt IS NOT NULL ORDER BY d.deletedAt DESC")
+    List<DocumentEntity> findSoftDeletedDocumentsByUploaderId(@Param("uploaderId") UUID uploaderId);
+
     @Modifying
     @Query(value = "DELETE FROM session_documents WHERE document_id = :documentId", nativeQuery = true)
     int deleteSessionDocumentsByDocumentId(@Param("documentId") UUID documentId);

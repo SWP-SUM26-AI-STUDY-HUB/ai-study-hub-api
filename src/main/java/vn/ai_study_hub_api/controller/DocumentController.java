@@ -279,6 +279,26 @@ public class        DocumentController {
         return ApiResponse.success(response, "Document updated successfully");
     }
 
+    @GetMapping("/trash")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Get soft-deleted documents", description = "Retrieves a list of soft-deleted documents for the authenticated user.")
+    public vn.ai_study_hub_api.common.ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> getTrashDocuments() {
+        log.info("Request to get trash documents");
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized get trash documents attempt");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse> documents =
+                documentService.getTrashDocuments(userId);
+
+        return ApiResponse.success(documents, "Trash documents retrieved successfully");
+    }
+
     @DeleteMapping("/{documentId}")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Soft-delete a document", description = "Soft-deletes a document and updates user storage quota.")
