@@ -95,6 +95,9 @@ app:
     # Per-file size cap enforced in DocumentServiceImpl.initiateUpload.
     # Keep spring.servlet.multipart.max-file-size >= this value.
     max-file-size-bytes: ${APP_UPLOAD_MAX_FILE_SIZE:52428800} # 50MB
+  document:
+    # Soft-deleted documents are permanently purged (S3 + DB) after this many days.
+    retention-days: ${APP_DOCUMENT_RETENTION_DAYS:30}
   jwt:
     secret: ${JWT_SECRET} # KHÔNG có default — fail-fast nếu thiếu env (tránh dùng secret hardcode)
     access-expiration-ms: 3600000

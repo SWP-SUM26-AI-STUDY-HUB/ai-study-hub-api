@@ -21,6 +21,7 @@ import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
@@ -67,6 +68,9 @@ public class DocumentServiceImplTest {
 
     @Mock
     private ReviewRepository reviewRepository;
+
+    @Mock
+    private ReportRepository reportRepository;
 
     @Mock
     private ModerationStreamProducer moderationStreamProducer;
@@ -379,6 +383,25 @@ public class DocumentServiceImplTest {
 
         assertEquals(190L, mockUser.getStorageUsed());
         assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser.getStatus());
+    }
+
+    @Test
+    void hardDeleteDocument_deletesS3FilesAndDependentsAndRow() {
+        String filePath = "userId/" + documentId + ".pdf";
+        String previewPath = "userId/" + documentId + "_preview.pdf";
+        mockDocument.setFileUrl(filePath);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(previewGenerator.getPreviewStoragePath(filePath)).thenReturn(previewPath);
+
+        documentService.hardDeleteDocument(documentId);
+
+        verify(uploadProvider, times(1)).delete(filePath);
+        verify(uploadProvider, times(1)).delete(previewPath);
+        verify(reviewRepository, times(1)).deleteByDocumentId(documentId);
+        verify(reportRepository, times(1)).deleteByDocumentId(documentId);
+        verify(documentRepository, times(1)).deleteSessionDocumentsByDocumentId(documentId);
+        verify(documentRepository, times(1)).delete(mockDocument);
     }
 
     @Test
