@@ -124,6 +124,7 @@ public class ReportServiceImpl implements ReportService {
             vn.ai_study_hub_api.model.DocumentStatus originalStatus = document.getStatus();
             document.setDeletedAt(java.time.LocalDateTime.now());
             document.setStatus(vn.ai_study_hub_api.model.DocumentStatus.DELETED);
+            document.setLinkShare(null);
             
             if (!vn.ai_study_hub_api.model.DocumentStatus.UPLOADING.equals(originalStatus)) {
                 long newStorageUsed = Math.max(0L, uploader.getStorageUsed() - document.getFileSizeBytes());

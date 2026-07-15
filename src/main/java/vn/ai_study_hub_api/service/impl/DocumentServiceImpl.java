@@ -308,6 +308,10 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentEntity getSharedDocument(String token) {
         log.info("Retrieving shared document for token: {}", token);
 
+        if (token == null || token.trim().isEmpty()) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Shared document not found");
+        }
+
         DocumentEntity document = documentRepository.findByLinkShare(token)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Shared document not found"));
 
@@ -482,6 +486,7 @@ public class DocumentServiceImpl implements DocumentService {
                     document.getFileSizeBytes(), uploader.getId(), newStorageUsed);
         }
 
+        document.setLinkShare(null);
         documentRepository.save(document);
 
         deleteFastApiVectorsAsync(documentId);

@@ -341,12 +341,29 @@ public class DocumentServiceImplTest {
     }
 
     @Test
+    void deleteDocument_Success_InvalidatesShareLink() {
+        mockDocument.setLinkShare("doc-123456");
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(100L);
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertNull(mockDocument.getLinkShare());
+        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
+        assertNotNull(mockDocument.getDeletedAt());
+        verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
     void deleteDocument_OverLimitStorage_RestoresToActive_WhenUnderLimit() {
         mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
         mockUser.setStorageUsed(200L);
         mockUser.setPlanId(1);
         mockDocument.setStatus(DocumentStatus.COMPLETED);
         mockDocument.setFileSizeBytes(150L);
+        mockDocument.setLinkShare("doc-123456");
 
         StoragePlanEntity freePlan = StoragePlanEntity.builder()
                 .id(1)
@@ -360,6 +377,7 @@ public class DocumentServiceImplTest {
 
         assertEquals(50L, mockUser.getStorageUsed());
         assertEquals(UserStatus.ACTIVE, mockUser.getStatus());
+        assertNull(mockDocument.getLinkShare());
         verify(userRepository, times(1)).save(mockUser);
     }
 
@@ -370,6 +388,7 @@ public class DocumentServiceImplTest {
         mockUser.setPlanId(1);
         mockDocument.setStatus(DocumentStatus.COMPLETED);
         mockDocument.setFileSizeBytes(10L);
+        mockDocument.setLinkShare("doc-123456");
 
         StoragePlanEntity freePlan = StoragePlanEntity.builder()
                 .id(1)
@@ -383,6 +402,7 @@ public class DocumentServiceImplTest {
 
         assertEquals(190L, mockUser.getStorageUsed());
         assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser.getStatus());
+        assertNull(mockDocument.getLinkShare());
     }
 
     @Test
@@ -559,6 +579,21 @@ public class DocumentServiceImplTest {
         );
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
         assertEquals("Shared document not found", exception.getMessage());
+    }
+
+    @Test
+    void getSharedDocument_NullOrBlankToken() {
+        AppException exceptionNull = assertThrows(AppException.class, () ->
+                documentService.getSharedDocument(null)
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exceptionNull.getStatus());
+        assertEquals("Shared document not found", exceptionNull.getMessage());
+
+        AppException exceptionBlank = assertThrows(AppException.class, () ->
+                documentService.getSharedDocument("   ")
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exceptionBlank.getStatus());
+        assertEquals("Shared document not found", exceptionBlank.getMessage());
     }
 
     @Test

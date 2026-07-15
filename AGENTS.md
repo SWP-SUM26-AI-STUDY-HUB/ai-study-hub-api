@@ -117,6 +117,8 @@ docker compose up --build -d
 
 **DTOs.** Input DTOs in `controller/request/`, output DTOs in `controller/response/`, both Lombok `@Data + @Builder`. Some controllers also declare static-inner request DTOs. Validate inputs with `@Valid`; validation failures become a 400 field→message map via `GlobalExceptionHandler`. Paginated endpoints return an empty `*PageResponse` subclass (`DocumentPageResponse`/`TrendingDocumentPageResponse`/`UserPageResponse`) extending `ApiResponse<Page<...>>` — these exist purely so Springdoc generates a correct schema for the generic `Page<T>` payload (the body is set manually via the inherited setters).
 
+**Document Sharing & Invalidation.** When a document is soft-deleted by its owner (`deleteDocument` in `DocumentServiceImpl`) or deleted by an admin due to violation reports (`resolveReport` in `ReportServiceImpl`), its `link_share` token in the database is explicitly set to `null` to immediately and permanently invalidate the share link. The preview endpoint (`getSharedDocument` in `DocumentServiceImpl`) verifies that the requested token is neither null nor empty, and throws a 404 `AppException` if the token does not exist or if the document is marked as deleted.
+
 ## Important Files
 
 | File | Purpose |
