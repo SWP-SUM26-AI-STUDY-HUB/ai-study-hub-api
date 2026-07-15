@@ -89,6 +89,22 @@ public class S3UploadProvider implements UploadProvider {
     }
 
     @Override
+    public byte[] download(String storagePath) {
+        log.info("Downloading object '{}' from bucket '{}'", storagePath, bucketName);
+        try {
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(storagePath)
+                    .build();
+            return s3Client.getObjectAsBytes(getObjectRequest).asByteArray();
+        } catch (Exception e) {
+            log.error("Failed to download object '{}' from S3", storagePath, e);
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to download file from S3: " + e.getMessage());
+        }
+    }
+
+    @Override
     public void delete(String storagePath) {
         log.info("Deleting file from S3 bucket '{}' with key '{}'", bucketName, storagePath);
         try {

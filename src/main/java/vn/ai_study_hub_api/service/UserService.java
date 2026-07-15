@@ -21,4 +21,5 @@ public interface UserService {
     UserResponse getMyProfile(java.util.UUID userId);
     UserStorageResponse getUserStorage(java.util.UUID userId);
     void savePreferredTags(java.util.UUID userId, java.util.List<Integer> tagIds);
+    boolean downgradeToFreePlan(UserEntity user);
 }

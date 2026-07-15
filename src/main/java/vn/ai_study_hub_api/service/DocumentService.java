@@ -30,6 +30,7 @@ public interface DocumentService {
     List<DocumentResponse> searchPublicDocuments(String keyword);
 
     void deleteDocument(UUID documentId, UUID userId);
+    void hardDeleteDocument(UUID documentId);
 
     vn.ai_study_hub_api.controller.response.DocumentAccessResponse getPreviewAccess(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
     DocumentResponse getDocumentById(UUID documentId, vn.ai_study_hub_api.security.CustomUserDetails userDetails);
@@ -42,7 +43,7 @@ public interface DocumentService {
 
     void rejectDocument(UUID documentId, String reason);
 
-    List<DocumentResponse> getRecommendedDocuments(UUID userId);
+    org.springframework.data.domain.Page<DocumentResponse> getRecommendedDocuments(UUID userId, int page, int size);
 
     void triggerFastApiAsync(UUID documentId);
 

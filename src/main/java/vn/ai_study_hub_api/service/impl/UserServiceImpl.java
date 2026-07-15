@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -280,6 +281,35 @@ public class UserServiceImpl implements UserService {
         user.setPreferredTagIds(uniqueTagIds);
         userRepository.save(user);
         log.info("Preferred tags saved successfully for userId: {}", userId);
+    }
+
+    @Override
+    @Transactional
+    public boolean downgradeToFreePlan(UserEntity user) {
+        LocalDateTime now = LocalDateTime.now();
+        if (user.getPlanId() == null || user.getPlanId() == 1
+                || user.getPlanExpiresAt() == null
+                || !user.getPlanExpiresAt().isBefore(now)) {
+            return false;
+        }
+
+        user.setPlanId(1);
+        user.setPlanExpiresAt(null);
+
+        long freeLimitInBytes = 2L * 1024L * 1024L * 1024L;
+        StoragePlanEntity freePlan = storagePlanRepository.findById(1).orElse(null);
+        if (freePlan != null) {
+            freeLimitInBytes = freePlan.getStorageLimit();
+        }
+
+        long used = user.getStorageUsed() != null ? user.getStorageUsed() : 0L;
+        if (used > freeLimitInBytes) {
+            user.setStatus(UserStatus.OVERLIMITSTORAGE);
+        }
+
+        userRepository.save(user);
+        log.info("Downgraded user {} to free plan (storage used: {} bytes)", user.getId(), used);
+        return true;
     }
 
 }

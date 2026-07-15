@@ -21,6 +21,7 @@ import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
@@ -31,6 +32,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import vn.ai_study_hub_api.service.UploadProvider;
+import org.springframework.data.domain.Page;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -71,6 +73,9 @@ public class DocumentServiceImplTest {
 
     @Mock
     private ReviewRepository reviewRepository;
+
+    @Mock
+    private ReportRepository reportRepository;
 
     @Mock
     private ModerationStreamProducer moderationStreamProducer;
@@ -315,9 +320,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void getPersonalDocuments_Success() {
-        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.ACTIVE);
         mockDocument.setDescription("Test description");
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
         List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
@@ -332,36 +335,81 @@ public class DocumentServiceImplTest {
         assertEquals(1, result.get(0).getTags().size());
         assertEquals("Study", result.get(0).getTags().get(1));
 
-        verify(userRepository, times(1)).findById(userId);
         verify(documentRepository, times(1)).findActiveDocumentsByUploaderId(userId);
     }
 
     @Test
-    void getPersonalDocuments_UserNotFound() {
-        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+    void getPersonalDocuments_OverLimitStorage_AllowedToList() {
+        when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
-        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
-                vn.ai_study_hub_api.exception.AppException.class,
-                () -> documentService.getPersonalDocuments(userId)
-        );
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
 
-        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatus());
-        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+        assertNotNull(result);
+        assertEquals(1, result.size());
     }
 
     @Test
-    void getPersonalDocuments_OverLimitStorage() {
-        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.OVERLIMITSTORAGE);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+    void deleteDocument_OverLimitStorage_RestoresToActive_WhenUnderLimit() {
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        mockUser.setStorageUsed(200L);
+        mockUser.setPlanId(1);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(150L);
 
-        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
-                vn.ai_study_hub_api.exception.AppException.class,
-                () -> documentService.getPersonalDocuments(userId)
-        );
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(100L)
+                .build();
 
-        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, exception.getStatus());
-        assertEquals("Your storage limit has been exceeded! Access denied.", exception.getMessage());
-        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(50L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.ACTIVE, mockUser.getStatus());
+        verify(userRepository, times(1)).save(mockUser);
+    }
+
+    @Test
+    void deleteDocument_OverLimitStorage_StaysOverLimit_WhenStillExceedsLimit() {
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        mockUser.setStorageUsed(200L);
+        mockUser.setPlanId(1);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(10L);
+
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(100L)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(190L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser.getStatus());
+    }
+
+    @Test
+    void hardDeleteDocument_deletesS3FilesAndDependentsAndRow() {
+        String filePath = "userId/" + documentId + ".pdf";
+        String previewPath = "userId/" + documentId + "_preview.pdf";
+        mockDocument.setFileUrl(filePath);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(previewGenerator.getPreviewStoragePath(filePath)).thenReturn(previewPath);
+
+        documentService.hardDeleteDocument(documentId);
+
+        verify(uploadProvider, times(1)).delete(filePath);
+        verify(uploadProvider, times(1)).delete(previewPath);
+        verify(reviewRepository, times(1)).deleteByDocumentId(documentId);
+        verify(reportRepository, times(1)).deleteByDocumentId(documentId);
+        verify(documentRepository, times(1)).deleteSessionDocumentsByDocumentId(documentId);
+        verify(documentRepository, times(1)).delete(mockDocument);
     }
 
     @Test
@@ -585,6 +633,7 @@ public class DocumentServiceImplTest {
         assertEquals("Test User", response.getUploaderName());
         assertEquals(4.5, response.getRating());
         assertEquals(12L, response.getReviewCount());
+        assertEquals(0, response.getDownloadCount());
         assertEquals(1, response.getTags().size());
         assertEquals("Math", response.getTags().get(0));
 
@@ -630,6 +679,7 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/public.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Math test document", response.getDescription());
+        assertEquals(0, response.getDownloadCount());
     }
 
     @Test
@@ -992,6 +1042,9 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/download.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Math test document", response.getDescription());
+        assertEquals(1, response.getDownloadCount());
+        assertEquals(1, doc.getDownloadCount());
+        verify(documentRepository, times(1)).save(doc);
     }
 
     @Test
@@ -1029,6 +1082,9 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/download-owner.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Private description", response.getDescription());
+        assertEquals(1, response.getDownloadCount());
+        assertEquals(1, doc.getDownloadCount());
+        verify(documentRepository, times(1)).save(doc);
     }
 
     @Test
@@ -1066,6 +1122,9 @@ public class DocumentServiceImplTest {
         assertEquals("https://presigned-url/download-admin.pdf", response.getPresignedUrl());
         assertEquals(testCreatedAt, response.getCreatedAt());
         assertEquals("Private description", response.getDescription());
+        assertEquals(1, response.getDownloadCount());
+        assertEquals(1, doc.getDownloadCount());
+        verify(documentRepository, times(1)).save(doc);
     }
 
     @Test
@@ -1118,17 +1177,16 @@ public class DocumentServiceImplTest {
     }
 
     @Test
-    void searchPublicDocuments_NotFound() {
+    void searchPublicDocuments_NoResults() {
         String keyword = "notfound";
         when(documentRepository.searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED))
                 .thenReturn(List.of());
 
-        AppException exception = assertThrows(AppException.class, () ->
-                documentService.searchPublicDocuments(keyword)
-        );
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.searchPublicDocuments(keyword);
 
-        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
-        assertEquals("No documents found matching the keyword.", exception.getMessage());
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
         verify(documentRepository, times(1)).searchPublicDocuments(keyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED);
     }
 
@@ -1483,6 +1541,70 @@ public class DocumentServiceImplTest {
         assertNotNull(result);
         assertEquals(1, result.getContent().size());
         assertEquals("Saved Doc", result.getContent().get(0).getTitle());
+    void getRecommendedDocuments_UserNotFound() {
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getRecommendedDocuments(userId, 0, 8)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("User not found.", exception.getMessage());
+    }
+
+    @Test
+    void getRecommendedDocuments_NoPreferredTags() {
+        mockUser.setPreferredTagIds(Collections.emptyList());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getRecommendedDocuments(userId, 0, 8);
+
+        assertTrue(result.isEmpty());
+        assertEquals(0, result.getTotalElements());
+    }
+
+    @Test
+    void getRecommendedDocuments_NoDocsFound() {
+        mockUser.setPreferredTagIds(List.of(1, 2));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(documentRepository.findRecommendedDocumentIds(List.of(1, 2))).thenReturn(Collections.emptyList());
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getRecommendedDocuments(userId, 0, 8);
+
+        assertTrue(result.isEmpty());
+        assertEquals(0, result.getTotalElements());
+    }
+
+    @Test
+    void getRecommendedDocuments_Success_Paging() {
+        mockUser.setPreferredTagIds(List.of(1, 2));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        // Let's mock 10 recommended document UUIDs
+        java.util.List<UUID> docIds = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            docIds.add(UUID.randomUUID());
+        }
+        when(documentRepository.findRecommendedDocumentIds(List.of(1, 2))).thenReturn(docIds);
+
+        // Page 1 size 8 should ask for the last 2 docIds: index 8 and 9
+        java.util.List<UUID> expectedPageDocIds = docIds.subList(8, 10);
+        
+        DocumentEntity doc8 = DocumentEntity.builder().id(docIds.get(8)).title("Doc 8").status(DocumentStatus.COMPLETED).visibility(DocumentVisibility.PUBLIC).build();
+        DocumentEntity doc9 = DocumentEntity.builder().id(docIds.get(9)).title("Doc 9").status(DocumentStatus.COMPLETED).visibility(DocumentVisibility.PUBLIC).build();
+
+        when(documentRepository.findAllById(expectedPageDocIds)).thenReturn(List.of(doc8, doc9));
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getRecommendedDocuments(userId, 1, 8);
+
+        assertNotNull(result);
+        assertEquals(10, result.getTotalElements());
+        assertEquals(2, result.getContent().size());
+        assertEquals("Doc 8", result.getContent().get(0).getTitle());
+        assertEquals("Doc 9", result.getContent().get(1).getTitle());
     }
 }
 

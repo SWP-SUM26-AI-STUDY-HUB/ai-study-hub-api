@@ -40,6 +40,9 @@ public class DocumentAccessResponse {
     @JsonProperty("review_count")
     private Long reviewCount;
 
+    @JsonProperty("download_count")
+    private Integer downloadCount;
+
     @JsonProperty("tags")
     private List<String> tags;
 }

@@ -26,6 +26,7 @@ import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
@@ -33,6 +34,7 @@ import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.SavedDocumentRepository;
 import vn.ai_study_hub_api.model.SavedDocumentEntity;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -73,6 +75,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final UploadProvider uploadProvider;
     private final StoragePlanRepository storagePlanRepository;
     private final ReviewRepository reviewRepository;
+    private final ReportRepository reportRepository;
     private final SavedDocumentRepository savedDocumentRepository;
     private final DocumentPreviewGenerator previewGenerator;
     private final DocumentRagClient ragClient;
@@ -318,13 +321,6 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public List<DocumentResponse> getPersonalDocuments(UUID userId) {
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
-
-        if (UserStatus.OVERLIMITSTORAGE.equals(user.getStatus())) {
-            throw new AppException(HttpStatus.FORBIDDEN, "Your storage limit has been exceeded! Access denied.");
-        }
-
         return documentRepository.findActiveDocumentsByUploaderId(userId).stream()
                 .map(documentMapper::toResponse)
                 .collect(Collectors.toList());
@@ -345,10 +341,6 @@ public class DocumentServiceImpl implements DocumentService {
                 trimmedKeyword, DocumentVisibility.PUBLIC, DocumentStatus.COMPLETED);
 
         log.info("Found {} public documents matching keyword '{}'", results.size(), trimmedKeyword);
-
-        if (results.isEmpty()) {
-            throw new AppException(HttpStatus.NOT_FOUND, "No documents found matching the keyword.");
-        }
 
         return results.stream()
                 .map(documentMapper::toResponse)
@@ -473,6 +465,18 @@ public class DocumentServiceImpl implements DocumentService {
             UserEntity uploader = document.getUploader();
             long newStorageUsed = Math.max(0L, uploader.getStorageUsed() - document.getFileSizeBytes());
             uploader.setStorageUsed(newStorageUsed);
+
+            if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
+                Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
+                long limitInBytes = storagePlanRepository.findById(planId)
+                        .map(StoragePlanEntity::getStorageLimit)
+                        .orElse(0L);
+                if (newStorageUsed <= limitInBytes) {
+                    uploader.setStatus(UserStatus.ACTIVE);
+                    log.info("User {} storage back under plan limit, restored to ACTIVE", uploader.getId());
+                }
+            }
+
             userRepository.save(uploader);
             log.info("Subtracted {} bytes from user {} storage. New storage: {} bytes",
                     document.getFileSizeBytes(), uploader.getId(), newStorageUsed);
@@ -491,6 +495,36 @@ public class DocumentServiceImpl implements DocumentService {
         } catch (Exception e) {
             log.error("Failed to delete vectors in FastAPI for document ID: {}", documentId, e);
         }
+    }
+
+    @Override
+    @Transactional
+    public void hardDeleteDocument(UUID documentId) {
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        String fileUrl = document.getFileUrl();
+        String previewPath = previewGenerator.getPreviewStoragePath(fileUrl);
+
+        // S3 first (idempotent DeleteObject): a later DB failure rolls back, and the next
+        // run retries the whole document (re-deleting already-gone S3 keys is a no-op).
+        if (fileUrl != null) {
+            uploadProvider.delete(fileUrl);
+        }
+        if (previewPath != null) {
+            uploadProvider.delete(previewPath);
+        }
+
+        // Application-level dependent cleanup: these FKs have no ON DELETE CASCADE,
+        // so they must be removed before the document row or the delete violates them.
+        reviewRepository.deleteByDocumentId(documentId);
+        reportRepository.deleteByDocumentId(documentId);
+        documentRepository.deleteSessionDocumentsByDocumentId(documentId);
+
+        // document_tags is cleared by Hibernate (DocumentEntity owns the @ManyToMany);
+        // saved_documents + document_chunks cascade at the DB level.
+        documentRepository.delete(document);
+        log.info("Permanently deleted document {} (S3 files + DB row + dependent rows)", documentId);
     }
 
     @Override
@@ -561,6 +595,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .uploaderName(uploaderName)
                 .rating(ratingVal)
                 .reviewCount(reviewCount)
+                .downloadCount(document.getDownloadCount())
                 .tags(tagsList)
                 .build();
     }
@@ -597,7 +632,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public DocumentAccessResponse getDownloadAccess(UUID documentId, CustomUserDetails userDetails) {
         log.info("Getting download access for document ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
 
@@ -626,6 +661,9 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
         }
 
+        document.setDownloadCount(document.getDownloadCount() == null ? 1 : document.getDownloadCount() + 1);
+        documentRepository.save(document);
+
         String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
 
         return DocumentAccessResponse.builder()
@@ -636,6 +674,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .presignedUrl(presignedUrl)
                 .createdAt(document.getCreatedAt())
                 .description(document.getDescription())
+                .downloadCount(document.getDownloadCount())
                 .build();
     }
 
@@ -734,8 +773,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DocumentResponse> getRecommendedDocuments(UUID userId) {
-        log.info("Fetching recommended documents for userId: {}", userId);
+    public Page<DocumentResponse> getRecommendedDocuments(UUID userId, int page, int size) {
+        log.info("Fetching recommended documents for userId: {} with page: {} size: {}", userId, page, size);
 
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found."));
@@ -743,23 +782,35 @@ public class DocumentServiceImpl implements DocumentService {
         List<Integer> preferredTagIds = user.getPreferredTagIds();
         if (preferredTagIds == null || preferredTagIds.isEmpty()) {
             log.info("User {} has no preferred tags, returning empty recommendations", userId);
-            return List.of();
+            return Page.empty(PageRequest.of(page, size));
         }
 
         List<UUID> docIds = documentRepository.findRecommendedDocumentIds(preferredTagIds);
         if (docIds.isEmpty()) {
             log.info("No recommended documents found for userId: {}", userId);
-            return List.of();
+            return Page.empty(PageRequest.of(page, size));
         }
 
-        Map<UUID, DocumentEntity> docMap = documentRepository.findAllById(docIds).stream()
+        int total = docIds.size();
+        Pageable pageable = PageRequest.of(page, size);
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), total);
+
+        if (start >= total) {
+            return new PageImpl<>(List.of(), pageable, total);
+        }
+
+        List<UUID> pageDocIds = docIds.subList(start, end);
+        Map<UUID, DocumentEntity> docMap = documentRepository.findAllById(pageDocIds).stream()
                 .collect(Collectors.toMap(DocumentEntity::getId, doc -> doc));
 
-        return docIds.stream()
+        List<DocumentResponse> content = pageDocIds.stream()
                 .map(docMap::get)
                 .filter(java.util.Objects::nonNull)
                 .map(documentMapper::toResponse)
                 .collect(Collectors.toList());
+
+        return new PageImpl<>(content, pageable, total);
     }
 
     // --- helpers ---
