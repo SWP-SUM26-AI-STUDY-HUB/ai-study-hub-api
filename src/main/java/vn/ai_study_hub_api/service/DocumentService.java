@@ -21,6 +21,7 @@ public interface DocumentService {
 
     DocumentEntity getSharedDocument(String token);
     List<DocumentResponse> getPersonalDocuments(UUID userId);
+    List<DocumentResponse> getTrashDocuments(UUID userId);
 
     /**
      * Search public documents by keyword.

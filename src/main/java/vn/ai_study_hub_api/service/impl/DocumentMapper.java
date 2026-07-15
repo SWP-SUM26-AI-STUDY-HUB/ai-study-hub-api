@@ -42,6 +42,7 @@ public class DocumentMapper {
                 .visibility(doc.getVisibility() != null ? doc.getVisibility().name() : null)
                 .downloadCount(doc.getDownloadCount())
                 .createdAt(doc.getCreatedAt())
+                .deletedAt(doc.getDeletedAt())
                 .build();
     }
 
