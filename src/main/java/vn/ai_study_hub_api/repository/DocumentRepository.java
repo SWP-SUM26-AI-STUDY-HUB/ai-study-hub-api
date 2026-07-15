@@ -1,12 +1,14 @@
 package vn.ai_study_hub_api.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import vn.ai_study_hub_api.model.DocumentEntity;
 import vn.ai_study_hub_api.model.DocumentStatus;
 import vn.ai_study_hub_api.model.DocumentVisibility;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,5 +66,14 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
             @Param("visibility") DocumentVisibility visibility,
             @Param("status") DocumentStatus status,
             org.springframework.data.domain.Pageable pageable);
+    @Query("SELECT d FROM DocumentEntity d WHERE d.deletedAt IS NOT NULL AND d.deletedAt < :cutoff")
+    List<DocumentEntity> findSoftDeletedBefore(@Param("cutoff") LocalDateTime cutoff);
+
+    @Query("SELECT d FROM DocumentEntity d WHERE d.uploader.id = :uploaderId AND d.deletedAt IS NOT NULL ORDER BY d.deletedAt DESC")
+    List<DocumentEntity> findSoftDeletedDocumentsByUploaderId(@Param("uploaderId") UUID uploaderId);
+
+    @Modifying
+    @Query(value = "DELETE FROM session_documents WHERE document_id = :documentId", nativeQuery = true)
+    int deleteSessionDocumentsByDocumentId(@Param("documentId") UUID documentId);
 }
 

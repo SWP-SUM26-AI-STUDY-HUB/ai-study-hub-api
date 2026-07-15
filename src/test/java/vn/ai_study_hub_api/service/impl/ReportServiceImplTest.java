@@ -176,6 +176,7 @@ public class ReportServiceImplTest {
 
     @Test
     void resolveReport_Success() {
+        mockDocument.setLinkShare("doc-123456");
         ReportEntity pendingReport = ReportEntity.builder()
                 .id(UUID.randomUUID())
                 .reporter(adminUser)
@@ -191,6 +192,7 @@ public class ReportServiceImplTest {
         assertEquals(ReportStatus.RESOLVED, pendingReport.getStatus());
         assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
         assertNotNull(mockDocument.getDeletedAt());
+        assertNull(mockDocument.getLinkShare());
 
         verify(reportRepository, times(1)).save(pendingReport);
         verify(documentRepository, times(1)).save(mockDocument);

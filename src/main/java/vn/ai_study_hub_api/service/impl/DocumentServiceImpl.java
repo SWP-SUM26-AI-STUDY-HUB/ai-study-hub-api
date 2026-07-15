@@ -26,6 +26,7 @@ import vn.ai_study_hub_api.model.UserRole;
 import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
@@ -74,6 +75,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final UploadProvider uploadProvider;
     private final StoragePlanRepository storagePlanRepository;
     private final ReviewRepository reviewRepository;
+    private final ReportRepository reportRepository;
     private final SavedDocumentRepository savedDocumentRepository;
     private final DocumentPreviewGenerator previewGenerator;
     private final DocumentRagClient ragClient;
@@ -306,6 +308,10 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentEntity getSharedDocument(String token) {
         log.info("Retrieving shared document for token: {}", token);
 
+        if (token == null || token.trim().isEmpty()) {
+            throw new AppException(HttpStatus.NOT_FOUND, "Shared document not found");
+        }
+
         DocumentEntity document = documentRepository.findByLinkShare(token)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Shared document not found"));
 
@@ -319,14 +325,16 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public List<DocumentResponse> getPersonalDocuments(UUID userId) {
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
-
-        if (UserStatus.OVERLIMITSTORAGE.equals(user.getStatus())) {
-            throw new AppException(HttpStatus.FORBIDDEN, "Your storage limit has been exceeded! Access denied.");
-        }
-
         return documentRepository.findActiveDocumentsByUploaderId(userId).stream()
+                .map(documentMapper::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DocumentResponse> getTrashDocuments(UUID userId) {
+        log.info("Fetching trash documents for user ID: {}", userId);
+        return documentRepository.findSoftDeletedDocumentsByUploaderId(userId).stream()
                 .map(documentMapper::toResponse)
                 .collect(Collectors.toList());
     }
@@ -470,11 +478,24 @@ public class DocumentServiceImpl implements DocumentService {
             UserEntity uploader = document.getUploader();
             long newStorageUsed = Math.max(0L, uploader.getStorageUsed() - document.getFileSizeBytes());
             uploader.setStorageUsed(newStorageUsed);
+
+            if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
+                Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
+                long limitInBytes = storagePlanRepository.findById(planId)
+                        .map(StoragePlanEntity::getStorageLimit)
+                        .orElse(0L);
+                if (newStorageUsed <= limitInBytes) {
+                    uploader.setStatus(UserStatus.ACTIVE);
+                    log.info("User {} storage back under plan limit, restored to ACTIVE", uploader.getId());
+                }
+            }
+
             userRepository.save(uploader);
             log.info("Subtracted {} bytes from user {} storage. New storage: {} bytes",
                     document.getFileSizeBytes(), uploader.getId(), newStorageUsed);
         }
 
+        document.setLinkShare(null);
         documentRepository.save(document);
 
         deleteFastApiVectorsAsync(documentId);
@@ -488,6 +509,36 @@ public class DocumentServiceImpl implements DocumentService {
         } catch (Exception e) {
             log.error("Failed to delete vectors in FastAPI for document ID: {}", documentId, e);
         }
+    }
+
+    @Override
+    @Transactional
+    public void hardDeleteDocument(UUID documentId) {
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        String fileUrl = document.getFileUrl();
+        String previewPath = previewGenerator.getPreviewStoragePath(fileUrl);
+
+        // S3 first (idempotent DeleteObject): a later DB failure rolls back, and the next
+        // run retries the whole document (re-deleting already-gone S3 keys is a no-op).
+        if (fileUrl != null) {
+            uploadProvider.delete(fileUrl);
+        }
+        if (previewPath != null) {
+            uploadProvider.delete(previewPath);
+        }
+
+        // Application-level dependent cleanup: these FKs have no ON DELETE CASCADE,
+        // so they must be removed before the document row or the delete violates them.
+        reviewRepository.deleteByDocumentId(documentId);
+        reportRepository.deleteByDocumentId(documentId);
+        documentRepository.deleteSessionDocumentsByDocumentId(documentId);
+
+        // document_tags is cleared by Hibernate (DocumentEntity owns the @ManyToMany);
+        // saved_documents + document_chunks cascade at the DB level.
+        documentRepository.delete(document);
+        log.info("Permanently deleted document {} (S3 files + DB row + dependent rows)", documentId);
     }
 
     @Override

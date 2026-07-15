@@ -22,6 +22,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     Optional<UserEntity> findByEmail(String email);
 
     List<UserEntity> findByPlanExpiresAtBetweenAndPlanIdIsNotNull(LocalDateTime start, LocalDateTime end);
+    List<UserEntity> findByPlanExpiresAtBeforeAndPlanIdNot(LocalDateTime now, Integer planId);
     boolean existsByEmail(String email);
     List<UserEntity> findAllByRole(UserRole role);
 

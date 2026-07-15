@@ -21,10 +21,16 @@ import vn.ai_study_hub_api.model.UserStatus;
 import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.repository.DocumentRepository;
 import vn.ai_study_hub_api.repository.NotificationRepository;
+import vn.ai_study_hub_api.repository.ReportRepository;
 import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.ReviewRepository;
+import vn.ai_study_hub_api.repository.SavedDocumentRepository;
+import vn.ai_study_hub_api.model.SavedDocumentEntity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import vn.ai_study_hub_api.service.UploadProvider;
 import org.springframework.data.domain.Page;
 
@@ -69,7 +75,13 @@ public class DocumentServiceImplTest {
     private ReviewRepository reviewRepository;
 
     @Mock
+    private ReportRepository reportRepository;
+
+    @Mock
     private ModerationStreamProducer moderationStreamProducer;
+
+    @Mock
+    private SavedDocumentRepository savedDocumentRepository;
 
     // Spied real instance: @InjectMocks injects it into the constructor AND real
     // mapping logic runs (so query tests still assert actual projection behavior).
@@ -308,9 +320,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void getPersonalDocuments_Success() {
-        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.ACTIVE);
         mockDocument.setDescription("Test description");
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
         List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
@@ -325,36 +335,118 @@ public class DocumentServiceImplTest {
         assertEquals(1, result.get(0).getTags().size());
         assertEquals("Study", result.get(0).getTags().get(1));
 
-        verify(userRepository, times(1)).findById(userId);
         verify(documentRepository, times(1)).findActiveDocumentsByUploaderId(userId);
     }
 
     @Test
-    void getPersonalDocuments_UserNotFound() {
-        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+    void getPersonalDocuments_OverLimitStorage_AllowedToList() {
+        when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
-        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
-                vn.ai_study_hub_api.exception.AppException.class,
-                () -> documentService.getPersonalDocuments(userId)
-        );
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
 
-        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatus());
-        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+        assertNotNull(result);
+        assertEquals(1, result.size());
     }
 
     @Test
-    void getPersonalDocuments_OverLimitStorage() {
-        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.OVERLIMITSTORAGE);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+    void deleteDocument_Success_InvalidatesShareLink() {
+        mockDocument.setLinkShare("doc-123456");
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(100L);
 
-        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
-                vn.ai_study_hub_api.exception.AppException.class,
-                () -> documentService.getPersonalDocuments(userId)
-        );
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
 
-        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, exception.getStatus());
-        assertEquals("Your storage limit has been exceeded! Access denied.", exception.getMessage());
-        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+        documentService.deleteDocument(documentId, userId);
+
+        assertNull(mockDocument.getLinkShare());
+        assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
+        assertNotNull(mockDocument.getDeletedAt());
+        verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
+    void getTrashDocuments_Success() {
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        mockDocument.setStatus(vn.ai_study_hub_api.model.DocumentStatus.DELETED);
+        when(documentRepository.findSoftDeletedDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
+
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getTrashDocuments(userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(mockDocument.getId(), result.get(0).getId());
+        assertEquals("DELETED", result.get(0).getStatus());
+        assertNotNull(result.get(0).getDeletedAt());
+
+        verify(documentRepository, times(1)).findSoftDeletedDocumentsByUploaderId(userId);
+    }
+
+    @Test
+    void deleteDocument_OverLimitStorage_RestoresToActive_WhenUnderLimit() {
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        mockUser.setStorageUsed(200L);
+        mockUser.setPlanId(1);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(150L);
+        mockDocument.setLinkShare("doc-123456");
+
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(100L)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(50L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.ACTIVE, mockUser.getStatus());
+        assertNull(mockDocument.getLinkShare());
+        verify(userRepository, times(1)).save(mockUser);
+    }
+
+    @Test
+    void deleteDocument_OverLimitStorage_StaysOverLimit_WhenStillExceedsLimit() {
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        mockUser.setStorageUsed(200L);
+        mockUser.setPlanId(1);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(10L);
+        mockDocument.setLinkShare("doc-123456");
+
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(100L)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(190L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser.getStatus());
+        assertNull(mockDocument.getLinkShare());
+    }
+
+    @Test
+    void hardDeleteDocument_deletesS3FilesAndDependentsAndRow() {
+        String filePath = "userId/" + documentId + ".pdf";
+        String previewPath = "userId/" + documentId + "_preview.pdf";
+        mockDocument.setFileUrl(filePath);
+
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(previewGenerator.getPreviewStoragePath(filePath)).thenReturn(previewPath);
+
+        documentService.hardDeleteDocument(documentId);
+
+        verify(uploadProvider, times(1)).delete(filePath);
+        verify(uploadProvider, times(1)).delete(previewPath);
+        verify(reviewRepository, times(1)).deleteByDocumentId(documentId);
+        verify(reportRepository, times(1)).deleteByDocumentId(documentId);
+        verify(documentRepository, times(1)).deleteSessionDocumentsByDocumentId(documentId);
+        verify(documentRepository, times(1)).delete(mockDocument);
     }
 
     @Test
@@ -512,6 +604,21 @@ public class DocumentServiceImplTest {
         );
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
         assertEquals("Shared document not found", exception.getMessage());
+    }
+
+    @Test
+    void getSharedDocument_NullOrBlankToken() {
+        AppException exceptionNull = assertThrows(AppException.class, () ->
+                documentService.getSharedDocument(null)
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exceptionNull.getStatus());
+        assertEquals("Shared document not found", exceptionNull.getMessage());
+
+        AppException exceptionBlank = assertThrows(AppException.class, () ->
+                documentService.getSharedDocument("   ")
+        );
+        assertEquals(HttpStatus.NOT_FOUND, exceptionBlank.getStatus());
+        assertEquals("Shared document not found", exceptionBlank.getMessage());
     }
 
     @Test
@@ -1371,6 +1478,121 @@ public class DocumentServiceImplTest {
         assertNotNull(response);
         assertEquals("PRIVATE", response.getVisibility());
         verify(documentRepository, times(1)).save(doc);
+    }
+
+    @Test
+    void saveDocument_Success() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(savedDocumentRepository.existsByUserIdAndDocumentId(userId, docId)).thenReturn(false);
+
+        documentService.saveDocument(docId, userId);
+
+        verify(savedDocumentRepository, times(1)).save(any(SavedDocumentEntity.class));
+    }
+
+    @Test
+    void saveDocument_Fail_NotCompleted() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.PENDING)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.saveDocument(docId, userId)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals("Only completed documents can be saved", exception.getMessage());
+        verify(savedDocumentRepository, never()).save(any());
+    }
+
+    @Test
+    void saveDocument_Fail_AlreadySaved() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .uploader(mockUser)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        when(documentRepository.findById(docId)).thenReturn(Optional.of(doc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(savedDocumentRepository.existsByUserIdAndDocumentId(userId, docId)).thenReturn(true);
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.saveDocument(docId, userId)
+        );
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals("Document is already saved", exception.getMessage());
+        verify(savedDocumentRepository, never()).save(any());
+    }
+
+    @Test
+    void unsaveDocument_Success() {
+        UUID docId = UUID.randomUUID();
+        when(savedDocumentRepository.existsByUserIdAndDocumentId(userId, docId)).thenReturn(true);
+
+        documentService.unsaveDocument(docId, userId);
+
+        verify(savedDocumentRepository, times(1)).deleteByUserIdAndDocumentId(userId, docId);
+    }
+
+    @Test
+    void unsaveDocument_NotFound() {
+        UUID docId = UUID.randomUUID();
+        when(savedDocumentRepository.existsByUserIdAndDocumentId(userId, docId)).thenReturn(false);
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.unsaveDocument(docId, userId)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Saved document relationship not found", exception.getMessage());
+        verify(savedDocumentRepository, never()).deleteByUserIdAndDocumentId(any(), any());
+    }
+
+    @Test
+    void getSavedDocuments_Success() {
+        UUID docId = UUID.randomUUID();
+        DocumentEntity doc = DocumentEntity.builder()
+                .id(docId)
+                .title("Saved Doc")
+                .uploader(mockUser)
+                .status(DocumentStatus.COMPLETED)
+                .visibility(DocumentVisibility.PUBLIC)
+                .build();
+
+        SavedDocumentEntity savedDoc = SavedDocumentEntity.builder()
+                .id(UUID.randomUUID())
+                .user(mockUser)
+                .document(doc)
+                .build();
+
+        Page<SavedDocumentEntity> page = new PageImpl<>(List.of(savedDoc));
+        when(savedDocumentRepository.findByUserId(eq(userId), any())).thenReturn(page);
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getSavedDocuments(userId, 0, 10);
+
+        assertNotNull(result);
+        assertEquals(1, result.getContent().size());
+        assertEquals("Saved Doc", result.getContent().get(0).getTitle());
     }
 
     @Test

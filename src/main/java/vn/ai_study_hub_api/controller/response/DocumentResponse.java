@@ -29,4 +29,5 @@ public class DocumentResponse {
     private Boolean isSaved;
     private Integer downloadCount;
     private LocalDateTime createdAt;
+    private LocalDateTime deletedAt;
 }

@@ -1,6 +1,7 @@
 package vn.ai_study_hub_api.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -23,4 +24,7 @@ public interface ReviewRepository extends JpaRepository<ReviewEntity, UUID> {
     Double calculateAverageRating(@Param("documentId") UUID documentId);
 
     long countByDocumentId(UUID documentId);
+    @Modifying
+    @Query("DELETE FROM ReviewEntity r WHERE r.document.id = :documentId")
+    int deleteByDocumentId(@Param("documentId") UUID documentId);
 }
