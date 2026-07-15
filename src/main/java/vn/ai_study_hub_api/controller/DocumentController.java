@@ -134,17 +134,23 @@ public class        DocumentController {
 
         DocumentEntity document = documentService.getSharedDocument(token);
 
-        String previewUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
+        UUID currentUserId = null;
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated()
+                && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof CustomUserDetails) {
+            currentUserId = ((CustomUserDetails) authentication.getPrincipal()).getId();
+        }
+
+        String fileUrl = document.getFileUrl();
+        if (currentUserId == null) {
+            fileUrl = getPreviewStoragePath(fileUrl);
+        }
+
+        String previewUrl = uploadProvider.generatePresignedUrl(fileUrl);
 
         java.util.List<String> tags = java.util.Collections.emptyList();
         if (document.getTags() != null) {
-            UUID currentUserId = null;
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication != null && authentication.isAuthenticated()
-                    && !(authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)
-                    && authentication.getPrincipal() instanceof CustomUserDetails) {
-                currentUserId = ((CustomUserDetails) authentication.getPrincipal()).getId();
-            }
             final UUID finalCurrentUserId = currentUserId;
             boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(finalCurrentUserId);
 
@@ -414,6 +420,17 @@ public class        DocumentController {
         pageResponse.setMessage("Author's public documents retrieved successfully");
         pageResponse.setData(response);
         return pageResponse;
+    }
+
+    private String getPreviewStoragePath(String storagePath) {
+        if (storagePath == null) {
+            return null;
+        }
+        int lastDot = storagePath.lastIndexOf('.');
+        if (lastDot == -1) {
+            return storagePath + "_preview";
+        }
+        return storagePath.substring(0, lastDot) + "_preview" + storagePath.substring(lastDot);
     }
 }
 
