@@ -106,6 +106,7 @@ public class TrendingDocumentCacheLoader {
                     .tags(tagResponses)
                     .averageRating(avgRating)
                     .reviewCount(reviewCount)
+                    .downloadCount(doc.getDownloadCount())
                     .build();
         }).collect(Collectors.toList());
 

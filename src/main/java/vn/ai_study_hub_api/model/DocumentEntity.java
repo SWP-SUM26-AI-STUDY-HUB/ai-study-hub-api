@@ -75,6 +75,10 @@ public class DocumentEntity implements Persistable<UUID> {
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
+    @Column(name = "download_count")
+    @Builder.Default
+    private Integer downloadCount = 0;
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "document_tags",

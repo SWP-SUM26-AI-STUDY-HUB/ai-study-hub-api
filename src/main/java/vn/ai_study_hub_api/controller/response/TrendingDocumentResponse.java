@@ -25,4 +25,5 @@ public class TrendingDocumentResponse {
     private List<TagResponse> tags;
     private Double averageRating;
     private Long reviewCount;
+    private Integer downloadCount;
 }

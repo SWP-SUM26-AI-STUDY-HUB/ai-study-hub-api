@@ -558,6 +558,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .uploaderName(uploaderName)
                 .rating(ratingVal)
                 .reviewCount(reviewCount)
+                .downloadCount(document.getDownloadCount())
                 .tags(tagsList)
                 .build();
     }
@@ -594,7 +595,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public DocumentAccessResponse getDownloadAccess(UUID documentId, CustomUserDetails userDetails) {
         log.info("Getting download access for document ID: {}, user: {}", documentId, userDetails != null ? userDetails.getId() : "Guest");
 
@@ -623,6 +624,9 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AppException(HttpStatus.FORBIDDEN, "Access denied.");
         }
 
+        document.setDownloadCount(document.getDownloadCount() == null ? 1 : document.getDownloadCount() + 1);
+        documentRepository.save(document);
+
         String presignedUrl = uploadProvider.generatePresignedUrl(document.getFileUrl());
 
         return DocumentAccessResponse.builder()
@@ -633,6 +637,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .presignedUrl(presignedUrl)
                 .createdAt(document.getCreatedAt())
                 .description(document.getDescription())
+                .downloadCount(document.getDownloadCount())
                 .build();
     }
 
