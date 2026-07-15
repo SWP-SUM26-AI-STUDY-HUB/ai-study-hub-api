@@ -341,6 +341,23 @@ public class DocumentServiceImplTest {
     }
 
     @Test
+    void getTrashDocuments_Success() {
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        mockDocument.setStatus(vn.ai_study_hub_api.model.DocumentStatus.DELETED);
+        when(documentRepository.findSoftDeletedDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
+
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getTrashDocuments(userId);
+
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(mockDocument.getId(), result.get(0).getId());
+        assertEquals("DELETED", result.get(0).getStatus());
+        assertNotNull(result.get(0).getDeletedAt());
+
+        verify(documentRepository, times(1)).findSoftDeletedDocumentsByUploaderId(userId);
+    }
+
+    @Test
     void deleteDocument_OverLimitStorage_RestoresToActive_WhenUnderLimit() {
         mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
         mockUser.setStorageUsed(200L);
