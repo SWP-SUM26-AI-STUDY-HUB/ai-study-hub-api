@@ -362,6 +362,9 @@ public class DocumentServiceImplTest {
         assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
         assertNotNull(mockDocument.getDeletedAt());
         verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
     void getTrashDocuments_Success() {
         mockDocument.setDeletedAt(java.time.LocalDateTime.now());
         mockDocument.setStatus(vn.ai_study_hub_api.model.DocumentStatus.DELETED);
@@ -1590,6 +1593,9 @@ public class DocumentServiceImplTest {
         assertNotNull(result);
         assertEquals(1, result.getContent().size());
         assertEquals("Saved Doc", result.getContent().get(0).getTitle());
+    }
+
+    @Test
     void getRecommendedDocuments_UserNotFound() {
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
