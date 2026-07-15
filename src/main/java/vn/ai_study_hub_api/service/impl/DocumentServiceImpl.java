@@ -33,6 +33,7 @@ import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.SavedDocumentRepository;
 import vn.ai_study_hub_api.model.SavedDocumentEntity;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -730,8 +731,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<DocumentResponse> getRecommendedDocuments(UUID userId) {
-        log.info("Fetching recommended documents for userId: {}", userId);
+    public Page<DocumentResponse> getRecommendedDocuments(UUID userId, int page, int size) {
+        log.info("Fetching recommended documents for userId: {} with page: {} size: {}", userId, page, size);
 
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found."));
@@ -739,23 +740,35 @@ public class DocumentServiceImpl implements DocumentService {
         List<Integer> preferredTagIds = user.getPreferredTagIds();
         if (preferredTagIds == null || preferredTagIds.isEmpty()) {
             log.info("User {} has no preferred tags, returning empty recommendations", userId);
-            return List.of();
+            return Page.empty(PageRequest.of(page, size));
         }
 
         List<UUID> docIds = documentRepository.findRecommendedDocumentIds(preferredTagIds);
         if (docIds.isEmpty()) {
             log.info("No recommended documents found for userId: {}", userId);
-            return List.of();
+            return Page.empty(PageRequest.of(page, size));
         }
 
-        Map<UUID, DocumentEntity> docMap = documentRepository.findAllById(docIds).stream()
+        int total = docIds.size();
+        Pageable pageable = PageRequest.of(page, size);
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), total);
+
+        if (start >= total) {
+            return new PageImpl<>(List.of(), pageable, total);
+        }
+
+        List<UUID> pageDocIds = docIds.subList(start, end);
+        Map<UUID, DocumentEntity> docMap = documentRepository.findAllById(pageDocIds).stream()
                 .collect(Collectors.toMap(DocumentEntity::getId, doc -> doc));
 
-        return docIds.stream()
+        List<DocumentResponse> content = pageDocIds.stream()
                 .map(docMap::get)
                 .filter(java.util.Objects::nonNull)
                 .map(documentMapper::toResponse)
                 .collect(Collectors.toList());
+
+        return new PageImpl<>(content, pageable, total);
     }
 
     // --- helpers ---

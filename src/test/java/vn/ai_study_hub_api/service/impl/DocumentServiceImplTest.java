@@ -26,6 +26,7 @@ import vn.ai_study_hub_api.repository.TagRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.repository.ReviewRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
+import org.springframework.data.domain.Page;
 
 import java.io.File;
 import java.time.LocalDateTime;
@@ -1359,6 +1360,73 @@ public class DocumentServiceImplTest {
         assertNotNull(response);
         assertEquals("PRIVATE", response.getVisibility());
         verify(documentRepository, times(1)).save(doc);
+    }
+
+    @Test
+    void getRecommendedDocuments_UserNotFound() {
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.getRecommendedDocuments(userId, 0, 8)
+        );
+
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("User not found.", exception.getMessage());
+    }
+
+    @Test
+    void getRecommendedDocuments_NoPreferredTags() {
+        mockUser.setPreferredTagIds(Collections.emptyList());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getRecommendedDocuments(userId, 0, 8);
+
+        assertTrue(result.isEmpty());
+        assertEquals(0, result.getTotalElements());
+    }
+
+    @Test
+    void getRecommendedDocuments_NoDocsFound() {
+        mockUser.setPreferredTagIds(List.of(1, 2));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(documentRepository.findRecommendedDocumentIds(List.of(1, 2))).thenReturn(Collections.emptyList());
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getRecommendedDocuments(userId, 0, 8);
+
+        assertTrue(result.isEmpty());
+        assertEquals(0, result.getTotalElements());
+    }
+
+    @Test
+    void getRecommendedDocuments_Success_Paging() {
+        mockUser.setPreferredTagIds(List.of(1, 2));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+
+        // Let's mock 10 recommended document UUIDs
+        java.util.List<UUID> docIds = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            docIds.add(UUID.randomUUID());
+        }
+        when(documentRepository.findRecommendedDocumentIds(List.of(1, 2))).thenReturn(docIds);
+
+        // Page 1 size 8 should ask for the last 2 docIds: index 8 and 9
+        java.util.List<UUID> expectedPageDocIds = docIds.subList(8, 10);
+        
+        DocumentEntity doc8 = DocumentEntity.builder().id(docIds.get(8)).title("Doc 8").status(DocumentStatus.COMPLETED).visibility(DocumentVisibility.PUBLIC).build();
+        DocumentEntity doc9 = DocumentEntity.builder().id(docIds.get(9)).title("Doc 9").status(DocumentStatus.COMPLETED).visibility(DocumentVisibility.PUBLIC).build();
+
+        when(documentRepository.findAllById(expectedPageDocIds)).thenReturn(List.of(doc8, doc9));
+
+        Page<vn.ai_study_hub_api.controller.response.DocumentResponse> result =
+                documentService.getRecommendedDocuments(userId, 1, 8);
+
+        assertNotNull(result);
+        assertEquals(10, result.getTotalElements());
+        assertEquals(2, result.getContent().size());
+        assertEquals("Doc 8", result.getContent().get(0).getTitle());
+        assertEquals("Doc 9", result.getContent().get(1).getTitle());
     }
 }
 

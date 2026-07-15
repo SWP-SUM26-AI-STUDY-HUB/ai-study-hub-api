@@ -42,7 +42,7 @@ public interface DocumentService {
 
     void rejectDocument(UUID documentId, String reason);
 
-    List<DocumentResponse> getRecommendedDocuments(UUID userId);
+    org.springframework.data.domain.Page<DocumentResponse> getRecommendedDocuments(UUID userId, int page, int size);
 
     void triggerFastApiAsync(UUID documentId);
 

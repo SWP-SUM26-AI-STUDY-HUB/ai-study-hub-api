@@ -53,7 +53,8 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
             "GROUP BY d.id, d.created_at " +
             "ORDER BY COUNT(DISTINCT dt.tag_id) DESC, " +
             "COALESCE(AVG(r.rating), 0) DESC, " +
-            "d.created_at DESC",
+            "d.created_at DESC " +
+            "LIMIT 100",
             nativeQuery = true)
     List<UUID> findRecommendedDocumentIds(@Param("tagIds") List<Integer> tagIds);
 
