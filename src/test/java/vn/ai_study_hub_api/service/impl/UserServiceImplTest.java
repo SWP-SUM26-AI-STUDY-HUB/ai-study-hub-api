@@ -20,6 +20,7 @@ import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.service.UploadProvider;
 import vn.ai_study_hub_api.controller.request.UpdateProfileRequest;
 import java.io.File;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -358,5 +359,57 @@ public class UserServiceImplTest {
                 userService.getUserStorage(userId));
         assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
         assertTrue(exception.getMessage().contains("Storage plan not found"));
+    }
+    @Test
+    void downgradeToFreePlan_expiredPremiumUser_downgradesAndFlagsOverLimit() {
+        mockUser1.setPlanId(2);
+        mockUser1.setPlanExpiresAt(LocalDateTime.now().minusDays(1));
+        mockUser1.setStorageUsed(5L * 1024L * 1024L * 1024L); // 5GB > 2GB free limit
+
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(2L * 1024L * 1024L * 1024L)
+                .build();
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        boolean result = userService.downgradeToFreePlan(mockUser1);
+
+        assertTrue(result);
+        assertEquals(1, mockUser1.getPlanId());
+        assertNull(mockUser1.getPlanExpiresAt());
+        assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser1.getStatus());
+        verify(userRepository, times(1)).save(mockUser1);
+    }
+
+    @Test
+    void downgradeToFreePlan_expiredPremiumUser_underLimit_staysActive() {
+        mockUser1.setPlanId(2);
+        mockUser1.setPlanExpiresAt(LocalDateTime.now().minusDays(1));
+        mockUser1.setStorageUsed(500L * 1024L * 1024L); // 500MB < 2GB
+
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(2L * 1024L * 1024L * 1024L)
+                .build();
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        boolean result = userService.downgradeToFreePlan(mockUser1);
+
+        assertTrue(result);
+        assertEquals(1, mockUser1.getPlanId());
+        assertNull(mockUser1.getPlanExpiresAt());
+        assertEquals(UserStatus.ACTIVE, mockUser1.getStatus());
+    }
+
+    @Test
+    void downgradeToFreePlan_alreadyFree_returnsFalseNoOp() {
+        mockUser1.setPlanId(1);
+        mockUser1.setPlanExpiresAt(null);
+
+        boolean result = userService.downgradeToFreePlan(mockUser1);
+
+        assertFalse(result);
+        verify(storagePlanRepository, never()).findById(any());
+        verify(userRepository, never()).save(any());
     }
 }

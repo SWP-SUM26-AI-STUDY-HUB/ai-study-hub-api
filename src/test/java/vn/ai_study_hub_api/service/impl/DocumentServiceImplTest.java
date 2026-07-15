@@ -308,9 +308,7 @@ public class DocumentServiceImplTest {
 
     @Test
     void getPersonalDocuments_Success() {
-        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.ACTIVE);
         mockDocument.setDescription("Test description");
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
         when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
         List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
@@ -325,36 +323,62 @@ public class DocumentServiceImplTest {
         assertEquals(1, result.get(0).getTags().size());
         assertEquals("Study", result.get(0).getTags().get(1));
 
-        verify(userRepository, times(1)).findById(userId);
         verify(documentRepository, times(1)).findActiveDocumentsByUploaderId(userId);
     }
 
     @Test
-    void getPersonalDocuments_UserNotFound() {
-        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+    void getPersonalDocuments_OverLimitStorage_AllowedToList() {
+        when(documentRepository.findActiveDocumentsByUploaderId(userId)).thenReturn(List.of(mockDocument));
 
-        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
-                vn.ai_study_hub_api.exception.AppException.class,
-                () -> documentService.getPersonalDocuments(userId)
-        );
+        List<vn.ai_study_hub_api.controller.response.DocumentResponse> result = documentService.getPersonalDocuments(userId);
 
-        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, exception.getStatus());
-        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+        assertNotNull(result);
+        assertEquals(1, result.size());
     }
 
     @Test
-    void getPersonalDocuments_OverLimitStorage() {
-        mockUser.setStatus(vn.ai_study_hub_api.model.UserStatus.OVERLIMITSTORAGE);
-        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+    void deleteDocument_OverLimitStorage_RestoresToActive_WhenUnderLimit() {
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        mockUser.setStorageUsed(200L);
+        mockUser.setPlanId(1);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(150L);
 
-        vn.ai_study_hub_api.exception.AppException exception = assertThrows(
-                vn.ai_study_hub_api.exception.AppException.class,
-                () -> documentService.getPersonalDocuments(userId)
-        );
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(100L)
+                .build();
 
-        assertEquals(org.springframework.http.HttpStatus.FORBIDDEN, exception.getStatus());
-        assertEquals("Your storage limit has been exceeded! Access denied.", exception.getMessage());
-        verify(documentRepository, never()).findActiveDocumentsByUploaderId(any(UUID.class));
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(50L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.ACTIVE, mockUser.getStatus());
+        verify(userRepository, times(1)).save(mockUser);
+    }
+
+    @Test
+    void deleteDocument_OverLimitStorage_StaysOverLimit_WhenStillExceedsLimit() {
+        mockUser.setStatus(UserStatus.OVERLIMITSTORAGE);
+        mockUser.setStorageUsed(200L);
+        mockUser.setPlanId(1);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setFileSizeBytes(10L);
+
+        StoragePlanEntity freePlan = StoragePlanEntity.builder()
+                .id(1)
+                .storageLimit(100L)
+                .build();
+
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(freePlan));
+
+        documentService.deleteDocument(documentId, userId);
+
+        assertEquals(190L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser.getStatus());
     }
 
     @Test

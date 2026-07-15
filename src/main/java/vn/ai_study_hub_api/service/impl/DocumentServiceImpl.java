@@ -319,13 +319,6 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     @Transactional(readOnly = true)
     public List<DocumentResponse> getPersonalDocuments(UUID userId) {
-        UserEntity user = userRepository.findById(userId)
-                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found with ID: " + userId));
-
-        if (UserStatus.OVERLIMITSTORAGE.equals(user.getStatus())) {
-            throw new AppException(HttpStatus.FORBIDDEN, "Your storage limit has been exceeded! Access denied.");
-        }
-
         return documentRepository.findActiveDocumentsByUploaderId(userId).stream()
                 .map(documentMapper::toResponse)
                 .collect(Collectors.toList());
@@ -470,6 +463,18 @@ public class DocumentServiceImpl implements DocumentService {
             UserEntity uploader = document.getUploader();
             long newStorageUsed = Math.max(0L, uploader.getStorageUsed() - document.getFileSizeBytes());
             uploader.setStorageUsed(newStorageUsed);
+
+            if (UserStatus.OVERLIMITSTORAGE.equals(uploader.getStatus())) {
+                Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
+                long limitInBytes = storagePlanRepository.findById(planId)
+                        .map(StoragePlanEntity::getStorageLimit)
+                        .orElse(0L);
+                if (newStorageUsed <= limitInBytes) {
+                    uploader.setStatus(UserStatus.ACTIVE);
+                    log.info("User {} storage back under plan limit, restored to ACTIVE", uploader.getId());
+                }
+            }
+
             userRepository.save(uploader);
             log.info("Subtracted {} bytes from user {} storage. New storage: {} bytes",
                     document.getFileSizeBytes(), uploader.getId(), newStorageUsed);

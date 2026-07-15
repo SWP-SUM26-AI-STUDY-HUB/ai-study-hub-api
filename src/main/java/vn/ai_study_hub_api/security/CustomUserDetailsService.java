@@ -6,23 +6,21 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import vn.ai_study_hub_api.model.StoragePlanEntity;
 import vn.ai_study_hub_api.model.UserEntity;
-import vn.ai_study_hub_api.model.UserStatus;
-import vn.ai_study_hub_api.repository.StoragePlanRepository;
 import vn.ai_study_hub_api.repository.UserRepository;
+import vn.ai_study_hub_api.service.UserService;
 
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
 
     private final UserRepository userRepository;
-    private final StoragePlanRepository storagePlanRepository;
+    private final UserService userService;
 
     @Autowired
-    public CustomUserDetailsService(UserRepository userRepository, StoragePlanRepository storagePlanRepository) {
+    public CustomUserDetailsService(UserRepository userRepository, UserService userService) {
         this.userRepository = userRepository;
-        this.storagePlanRepository = storagePlanRepository;
+        this.userService = userService;
     }
 
     @Override
@@ -30,28 +28,9 @@ public class CustomUserDetailsService implements UserDetailsService {
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
-        
-        java.time.LocalDateTime now = java.time.LocalDateTime.now();
-        if (user.getPlanId() != null && user.getPlanId() != 1 
-                && user.getPlanExpiresAt() != null && user.getPlanExpiresAt().isBefore(now)) {
-            
-            user.setPlanId(1);
-            user.setPlanExpiresAt(null);
-            
-            long freeLimitInBytes = 2L * 1024L * 1024L * 1024L;
-            StoragePlanEntity freePlan = storagePlanRepository.findById(1).orElse(null);
-            if (freePlan != null) {
-                freeLimitInBytes = freePlan.getStorageLimit();
-            }
-            
-            long used = user.getStorageUsed() != null ? user.getStorageUsed() : 0L;
-            if (used > freeLimitInBytes) {
-                user.setStatus(UserStatus.OVERLIMITSTORAGE);
-            }
-            
-            user = userRepository.save(user);
-        }
-        
+
+        userService.downgradeToFreePlan(user);
+
         return CustomUserDetails.build(user);
     }
 }
