@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +37,9 @@ public class AutoModerationServiceImplTest {
 
     @Mock
     private WebClient webClient;
+
+    @Mock
+    private DocumentImageExtractor imageExtractor;
 
     @Mock
     private DocumentService documentService;
@@ -58,6 +62,11 @@ public class AutoModerationServiceImplTest {
         ReflectionTestUtils.setField(autoModerationService, "openAiApiKey", "mock_api_key");
         ReflectionTestUtils.setField(autoModerationService, "moderationUrl", "https://api.openai.com/v1/moderations");
         ReflectionTestUtils.setField(autoModerationService, "documentService", documentService);
+        // Image moderation defaults OFF here — existing text-only cases are unaffected. Tests that
+        // exercise the image path flip imageModerationEnabled=true explicitly.
+        ReflectionTestUtils.setField(autoModerationService, "imageModerationEnabled", false);
+        ReflectionTestUtils.setField(autoModerationService, "imageMaxPerDoc", 30);
+        ReflectionTestUtils.setField(autoModerationService, "imageBatchSize", 5);
     }
 
     @Test
@@ -167,6 +176,107 @@ public class AutoModerationServiceImplTest {
 
         verify(documentService, never()).approveDocument(any());
         verify(documentService, never()).rejectDocument(any(), anyString());
+    }
+
+    // --- Image moderation ---
+
+    /**
+     * Policy: any failure in the image-moderation flow defers the document to manual review (PENDING)
+     * rather than auto-approving on text alone. Text here is clean (would normally approve), but image
+     * extraction fails -> neither approve nor reject fires.
+     */
+    @Test
+    void process_ImageModerationFailure_LeavesPendingForManualReview() {
+        mockDocument.setFileUrl("u/d.pdf");
+        mockDocument.setFileType(".pdf");
+        ReflectionTestUtils.setField(autoModerationService, "imageModerationEnabled", true);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        ChunkContentProjection mockChunk = mock(ChunkContentProjection.class);
+        when(mockChunk.getContent()).thenReturn("clean text");
+        when(chunkRepository.findChunkContentsByDocumentId(documentId)).thenReturn(List.of(mockChunk));
+
+        setupMockWebClient(Mono.just(lowScoreResponse()));
+        when(imageExtractor.extract(eq("u/d.pdf"), eq(".pdf"), anyInt()))
+                .thenThrow(new RuntimeException("S3 down"));
+
+        autoModerationService.process(documentId);
+
+        verify(documentService, never()).approveDocument(any());
+        verify(documentService, never()).rejectDocument(any(), anyString());
+        verify(imageExtractor).extract(eq("u/d.pdf"), eq(".pdf"), eq(30));
+    }
+
+    @Test
+    void process_ImageViolation_AutoReject() {
+        mockDocument.setFileUrl("u/d.docx");
+        mockDocument.setFileType(".docx");
+        ReflectionTestUtils.setField(autoModerationService, "imageModerationEnabled", true);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        ChunkContentProjection mockChunk = mock(ChunkContentProjection.class);
+        when(mockChunk.getContent()).thenReturn("text");
+        when(chunkRepository.findChunkContentsByDocumentId(documentId)).thenReturn(List.of(mockChunk));
+
+        setupMockWebClient(Mono.just(highScoreResponse()));
+        when(imageExtractor.extract(any(), any(), anyInt())).thenReturn(
+                List.of(new DocumentImageExtractor.ExtractedImage(new byte[]{1, 2, 3}, "image/jpeg")));
+
+        autoModerationService.process(documentId);
+
+        verify(documentService, times(1)).rejectDocument(eq(documentId), contains("violence"));
+        verify(imageExtractor).extract(eq("u/d.docx"), eq(".docx"), eq(30));
+    }
+
+    @Test
+    void process_ImagesClean_AutoApprove() {
+        mockDocument.setFileUrl("u/d.docx");
+        mockDocument.setFileType(".docx");
+        ReflectionTestUtils.setField(autoModerationService, "imageModerationEnabled", true);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        ChunkContentProjection mockChunk = mock(ChunkContentProjection.class);
+        when(mockChunk.getContent()).thenReturn("clean text");
+        when(chunkRepository.findChunkContentsByDocumentId(documentId)).thenReturn(List.of(mockChunk));
+
+        setupMockWebClient(Mono.just(lowScoreResponse()));
+        when(imageExtractor.extract(any(), any(), anyInt())).thenReturn(
+                List.of(new DocumentImageExtractor.ExtractedImage(new byte[]{1, 2, 3}, "image/jpeg")));
+
+        autoModerationService.process(documentId);
+
+        verify(documentService, times(1)).approveDocument(documentId);
+        verify(imageExtractor).extract(eq("u/d.docx"), eq(".docx"), eq(30));
+    }
+
+    @Test
+    void process_ImageDisabled_SkipsExtraction() {
+        // imageModerationEnabled stays false (from setUp).
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        ChunkContentProjection mockChunk = mock(ChunkContentProjection.class);
+        when(mockChunk.getContent()).thenReturn("clean text");
+        when(chunkRepository.findChunkContentsByDocumentId(documentId)).thenReturn(List.of(mockChunk));
+
+        setupMockWebClient(Mono.just(lowScoreResponse()));
+
+        autoModerationService.process(documentId);
+
+        verify(documentService, times(1)).approveDocument(documentId);
+        verify(imageExtractor, never()).extract(any(), any(), anyInt());
+    }
+
+    private AutoModerationServiceImpl.ModerationResponse lowScoreResponse() {
+        AutoModerationServiceImpl.ModerationResult r = new AutoModerationServiceImpl.ModerationResult();
+        r.setCategoryScores(Map.of("hate", 0.01, "violence", 0.02));
+        AutoModerationServiceImpl.ModerationResponse resp = new AutoModerationServiceImpl.ModerationResponse();
+        resp.setResults(List.of(r));
+        return resp;
+    }
+
+    private AutoModerationServiceImpl.ModerationResponse highScoreResponse() {
+        AutoModerationServiceImpl.ModerationResult r = new AutoModerationServiceImpl.ModerationResult();
+        r.setFlagged(true);
+        r.setCategoryScores(Map.of("hate", 0.1, "violence", 0.85));
+        AutoModerationServiceImpl.ModerationResponse resp = new AutoModerationServiceImpl.ModerationResponse();
+        resp.setResults(List.of(r));
+        return resp;
     }
 
     @SuppressWarnings("unchecked")

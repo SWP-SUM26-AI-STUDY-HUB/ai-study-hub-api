@@ -13,6 +13,14 @@ public interface UploadProvider {
     String getPublicUrl(String storagePath);
 
     /**
+     * Downloads the raw bytes of an object from S3 (used to extract embedded images for moderation).
+     *
+     * @param storagePath the S3 object key
+     * @return the object's bytes
+     */
+    byte[] download(String storagePath);
+
+    /**
      * Generates a unique, structured storage path/key for the file.
      * Format: {userId}/{documentId}.{fileExtension}
      *

@@ -20,6 +20,9 @@ import vn.ai_study_hub_api.repository.projection.ChunkContentProjection;
 import vn.ai_study_hub_api.service.AutoModerationService;
 import vn.ai_study_hub_api.service.DocumentService;
 
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -33,6 +36,7 @@ public class AutoModerationServiceImpl implements AutoModerationService {
     private final DocumentChunkRepository chunkRepository;
     private final DocumentRepository documentRepository;
     private final WebClient webClient;
+    private final DocumentImageExtractor imageExtractor;
 
     @org.springframework.beans.factory.annotation.Autowired
     @Lazy
@@ -43,6 +47,15 @@ public class AutoModerationServiceImpl implements AutoModerationService {
 
     @Value("${openai.moderation-url:https://api.openai.com/v1/moderations}")
     private String moderationUrl;
+
+    @Value("${app.moderation.image.enabled:true}")
+    private boolean imageModerationEnabled;
+
+    @Value("${app.moderation.image.max-per-doc:30}")
+    private int imageMaxPerDoc;
+
+    @Value("${app.moderation.image.batch-size:5}")
+    private int imageBatchSize;
 
     @Override
     public void process(UUID documentId) {
@@ -62,7 +75,7 @@ public class AutoModerationServiceImpl implements AutoModerationService {
             return;
         }
 
-        // 2. Fetch chunks
+        // 2. Fetch text chunks
         List<ChunkContentProjection> chunks = chunkRepository.findChunkContentsByDocumentId(documentId);
         if (chunks == null || chunks.isEmpty()) {
             log.warn("Moderation: no chunks for document {}. Leaving PENDING for manual review.", documentId);
@@ -84,58 +97,97 @@ public class AutoModerationServiceImpl implements AutoModerationService {
             return;
         }
 
-        // 3. OpenAI Moderation API in batches (max 30 chunks per request to avoid payload limits)
-        final int BATCH_SIZE = 30;
-        double maxScore = 0.0;
-        String topViolationCategory = "";
+        // 3. Text moderation via OpenAI Moderation API in batches (max 30 chunks per request).
+        //    No catch here — failures propagate to the stream listener, which leaves the message
+        //    unacked so it is redelivered (retry / DLQ), instead of silently swallowing the error.
+        ScoreTracker tracker = new ScoreTracker();
+        final int TEXT_BATCH = 30;
+        for (int i = 0; i < inputs.size(); i += TEXT_BATCH) {
+            int end = Math.min(inputs.size(), i + TEXT_BATCH);
+            List<Object> batch = new ArrayList<>(inputs.subList(i, end));
+            log.debug("Sending text batch {} to OpenAI Moderation API for document {}", (i / TEXT_BATCH) + 1, documentId);
+            tracker.merge(callModeration(ModerationRequest.builder().input(batch).build()));
+        }
 
-        for (int i = 0; i < inputs.size(); i += BATCH_SIZE) {
-            int end = Math.min(inputs.size(), i + BATCH_SIZE);
-            List<String> batch = inputs.subList(i, end);
-
-            ModerationRequest requestPayload = ModerationRequest.builder().input(batch).build();
-            log.debug("Sending batch {} to OpenAI Moderation API for document {}", (i / BATCH_SIZE) + 1, documentId);
-
-            ModerationResponse response = webClient.post()
-                    .uri(moderationUrl)
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + openAiApiKey)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestPayload)
-                    .retrieve()
-                    .bodyToMono(ModerationResponse.class)
-                    .block();
-
-            if (response != null && response.getResults() != null) {
-                for (ModerationResult result : response.getResults()) {
-                    if (result.getCategoryScores() != null) {
-                        for (Map.Entry<String, Double> entry : result.getCategoryScores().entrySet()) {
-                            if (entry.getValue() > maxScore) {
-                                maxScore = entry.getValue();
-                                topViolationCategory = entry.getKey();
-                            }
+        // 3b. Image moderation: extract embedded raster images (PDF/DOCX) from the original file and
+        //     classify them too. Failures here are caught (NOT propagated) — they defer the document to
+        //     manual review (PENDING) rather than risk an auto-approve on unchecked images.
+        boolean imagesChecked = true;
+        if (imageModerationEnabled) {
+            try {
+                List<DocumentImageExtractor.ExtractedImage> images =
+                        imageExtractor.extract(document.getFileUrl(), document.getFileType(), imageMaxPerDoc);
+                if (!images.isEmpty()) {
+                    int total = images.size();
+                    for (int i = 0; i < total; i += imageBatchSize) {
+                        int end = Math.min(total, i + imageBatchSize);
+                        List<Object> batch = new ArrayList<>(end - i);
+                        for (DocumentImageExtractor.ExtractedImage img : images.subList(i, end)) {
+                            String dataUrl = "data:" + img.mimeType() + ";base64,"
+                                    + Base64.getEncoder().encodeToString(img.data());
+                            Map<String, Object> item = new LinkedHashMap<>();
+                            item.put("type", "image_url");
+                            item.put("image_url", Map.of("url", dataUrl));
+                            batch.add(item);
                         }
+                        tracker.merge(callModeration(ModerationRequest.builder().input(batch).build()));
                     }
+                    log.info("Moderated {} image(s) for document {}", total, documentId);
                 }
+            } catch (Exception e) {
+                log.warn("Image moderation failed for document {}; deferring to manual review (PENDING)", documentId, e);
+                imagesChecked = false;
             }
         }
 
         log.info("Moderation completed for document {}. Max violation score: {} ({})",
-                documentId, maxScore, topViolationCategory);
+                documentId, tracker.max, tracker.category);
 
-        // 4. Triage by max category score. NOTE: no catch here — failures propagate to the stream
-        //    listener, which leaves the message unacked so it is redelivered (retry / DLQ), instead of
-        //    silently swallowing the error and leaving the document stuck in PENDING (the old @Async bug).
-        if (maxScore >= 0.80) {
+        // 4. Triage by max category score. A clear violation (>=0.80) still auto-rejects. Auto-approve
+        //    (<0.40) additionally requires that image moderation — when enabled — completed cleanly;
+        //    otherwise the document is left PENDING for manual admin review.
+        if (tracker.max >= 0.80) {
             String rejectReason = String.format("Tài liệu bị từ chối tự động do vi phạm tiêu chuẩn cộng đồng: %s (Mức độ vi phạm: %.2f)",
-                    topViolationCategory, maxScore);
+                    tracker.category, tracker.max);
             log.info("Moderation: document {} auto-rejected. Reason: {}", documentId, rejectReason);
             documentService.rejectDocument(documentId, rejectReason);
-        } else if (maxScore < 0.40) {
+        } else if (tracker.max < 0.40 && imagesChecked) {
             log.info("Moderation: document {} auto-approved.", documentId);
             documentService.approveDocument(documentId);
         } else {
-            log.info("Moderation: document {} in yellow zone (score: {}). Left as PENDING for manual admin review.",
-                    documentId, maxScore);
+            log.info("Moderation: document {} left PENDING for manual review (score: {}, imagesChecked: {}).",
+                    documentId, tracker.max, imagesChecked);
+        }
+    }
+
+    /** Sends a moderation request and blocks for the response. Throws on OpenAI errors (propagated by the caller). */
+    private ModerationResponse callModeration(ModerationRequest payload) {
+        return webClient.post()
+                .uri(moderationUrl)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + openAiApiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(payload)
+                .retrieve()
+                .bodyToMono(ModerationResponse.class)
+                .block();
+    }
+
+    /** Running maximum category score + its category across all moderation responses (text + images). */
+    private static final class ScoreTracker {
+        double max = 0.0;
+        String category = "";
+
+        void merge(ModerationResponse response) {
+            if (response == null || response.getResults() == null) return;
+            for (ModerationResult result : response.getResults()) {
+                if (result.getCategoryScores() == null) continue;
+                for (Map.Entry<String, Double> entry : result.getCategoryScores().entrySet()) {
+                    if (entry.getValue() > max) {
+                        max = entry.getValue();
+                        category = entry.getKey();
+                    }
+                }
+            }
         }
     }
 
@@ -146,7 +198,8 @@ public class AutoModerationServiceImpl implements AutoModerationService {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ModerationRequest {
-        private List<String> input;
+        // Each item is a plain String (text) or a Map (image_url object) per the omni-moderation-latest schema.
+        private List<Object> input;
     }
 
     @Data
