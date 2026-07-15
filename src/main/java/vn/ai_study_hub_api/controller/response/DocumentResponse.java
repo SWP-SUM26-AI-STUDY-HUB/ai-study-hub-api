@@ -27,5 +27,6 @@ public class DocumentResponse {
     private UploaderResponse uploader;
     private String visibility;
     private Boolean isSaved;
+    private Integer downloadCount;
     private LocalDateTime createdAt;
 }

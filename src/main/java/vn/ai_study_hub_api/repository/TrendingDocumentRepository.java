@@ -15,20 +15,13 @@ import java.util.UUID;
 @Repository
 public interface TrendingDocumentRepository extends JpaRepository<DocumentEntity, UUID> {
 
-    @Query(value = "SELECT d.id, d.uploader_id, d.title, d.file_url, d.file_type, d.file_size_bytes, " +
-            "UPPER(d.status::text) as status, UPPER(d.visibility::text) as visibility, " +
-            "d.link_share, d.created_at, d.updated_at, d.deleted_at, d.summary, d.description, d.rejection_reason FROM documents d " +
-            "LEFT JOIN (SELECT document_id, AVG(rating) as avg_rating, COUNT(id) as review_count " +
-            "           FROM reviews GROUP BY document_id) r ON d.id = r.document_id " +
-            "WHERE cast(d.visibility as text) = 'public' " +
-            "  AND cast(d.status as text) = 'completed' " +
-            "  AND d.deleted_at IS NULL " +
-            "ORDER BY COALESCE(r.avg_rating, 0.0) DESC, COALESCE(r.review_count, 0) DESC, d.created_at DESC",
-            countQuery = "SELECT count(*) FROM documents d " +
-            "WHERE cast(d.visibility as text) = 'public' " +
-            "  AND cast(d.status as text) = 'completed' " +
-            "  AND d.deleted_at IS NULL",
-            nativeQuery = true)
+    @Query("SELECT d FROM DocumentEntity d " +
+            "LEFT JOIN ReviewEntity r ON d.id = r.document.id " +
+            "WHERE d.visibility = vn.ai_study_hub_api.model.DocumentVisibility.PUBLIC " +
+            "  AND d.status = vn.ai_study_hub_api.model.DocumentStatus.COMPLETED " +
+            "  AND d.deletedAt IS NULL " +
+            "GROUP BY d.id " +
+            "ORDER BY COALESCE(AVG(r.rating), 0.0) DESC, COUNT(r.id) DESC, d.createdAt DESC")
     Page<DocumentEntity> findTrendingDocuments(Pageable pageable);
 
     @Query(value = "SELECT document_id as documentId, COALESCE(AVG(rating), 0.0) as averageRating, COUNT(id) as reviewCount " +
