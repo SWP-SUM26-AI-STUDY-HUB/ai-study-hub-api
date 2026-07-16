@@ -193,6 +193,8 @@ public class ReportServiceImplTest {
         assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
         assertNotNull(mockDocument.getDeletedAt());
         assertNull(mockDocument.getLinkShare());
+        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatusBeforeDeletion());
+        assertTrue(mockDocument.getDeletedByAdmin());
 
         verify(reportRepository, times(1)).save(pendingReport);
         verify(documentRepository, times(1)).save(mockDocument);

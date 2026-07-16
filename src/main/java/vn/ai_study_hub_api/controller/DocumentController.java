@@ -320,6 +320,27 @@ public class        DocumentController {
         return ApiResponse.success("Document deleted successfully");
     }
 
+    @PostMapping("/{documentId}/restore")
+    @ResponseStatus(HttpStatus.OK)
+    @Operation(summary = "Restore a soft-deleted document", description = "Restores a document soft-deleted by its owner back to its pre-deletion state. Documents removed by an administrator cannot be restored by the owner.")
+    public ApiResponse<Void> restoreDocument(
+            @PathVariable("documentId") UUID documentId) {
+
+        log.info("Request to restore document ID: {}", documentId);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            log.error("Unauthorized restore document attempt");
+            throw new AppException(HttpStatus.UNAUTHORIZED, "Unauthorized: Access denied.");
+        }
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        UUID userId = userDetails.getId();
+
+        documentService.restoreDocument(documentId, userId);
+
+        return ApiResponse.success("Document restored successfully");
+    }
+
     @GetMapping("/{documentId}")
     @ResponseStatus(HttpStatus.OK)
     @Operation(summary = "Get document details", description = "Retrieves a document's metadata. The owner sees full details (including private tags); other users only see public, completed documents.")

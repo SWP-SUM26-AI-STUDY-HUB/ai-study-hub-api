@@ -471,6 +471,8 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         DocumentStatus originalStatus = document.getStatus();
+        document.setStatusBeforeDeletion(originalStatus);
+        document.setDeletedByAdmin(false);
         document.setDeletedAt(LocalDateTime.now());
         document.setStatus(DocumentStatus.DELETED);
 
@@ -498,7 +500,6 @@ public class DocumentServiceImpl implements DocumentService {
         document.setLinkShare(null);
         documentRepository.save(document);
 
-        deleteFastApiVectorsAsync(documentId);
     }
 
     @Async("taskExecutor")
@@ -516,6 +517,17 @@ public class DocumentServiceImpl implements DocumentService {
     public void hardDeleteDocument(UUID documentId) {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        // (1) RAG FIRST: needs document_chunks present to read metadata.doc_id -> parent_ids,
+        // so it must run before the documents row (and its cascaded chunks) are deleted.
+        // Best-effort: on failure the DB cascade still clears chunks; parent_docs_store on the
+        // RAG filesystem would be left as a small leak (parent docs zombie).
+        try {
+            ragClient.deleteVectors(documentId);
+        } catch (Exception e) {
+            log.warn("RAG purge (best-effort) failed for {} (DB cascade will clear chunks): {}",
+                    documentId, e.getMessage());
+        }
 
         String fileUrl = document.getFileUrl();
         String previewPath = previewGenerator.getPreviewStoragePath(fileUrl);
@@ -539,6 +551,72 @@ public class DocumentServiceImpl implements DocumentService {
         // saved_documents + document_chunks cascade at the DB level.
         documentRepository.delete(document);
         log.info("Permanently deleted document {} (S3 files + DB row + dependent rows)", documentId);
+    }
+
+    @Override
+    @Transactional
+    @CacheEvict(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS, allEntries = true)
+    public void restoreDocument(UUID documentId, UUID userId) {
+        log.info("Restoring document ID: {}, requested by user ID: {}", documentId, userId);
+
+        DocumentEntity document = documentRepository.findByIdWithUploader(documentId)
+                .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Document not found"));
+
+        if (document.getDeletedAt() == null || !DocumentStatus.DELETED.equals(document.getStatus())) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Document is not deleted");
+        }
+
+        if (Boolean.TRUE.equals(document.getDeletedByAdmin())) {
+            throw new AppException(HttpStatus.FORBIDDEN,
+                    "This document was removed by an administrator and cannot be restored");
+        }
+
+        if (!document.getUploader().getId().equals(userId)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
+        }
+
+        DocumentStatus pre = document.getStatusBeforeDeletion();
+        if (pre == null || DocumentStatus.UPLOADING.equals(pre)) {
+            throw new AppException(HttpStatus.BAD_REQUEST, "Document cannot be restored");
+        }
+
+        // --- restore lifecycle state ---
+        document.setStatus(pre);
+        document.setDeletedAt(null);
+        document.setStatusBeforeDeletion(null);
+        document.setDeletedByAdmin(false);
+
+        // --- restore storage (symmetric to the subtraction done in deleteDocument) ---
+        UserEntity uploader = document.getUploader();
+        long used = uploader.getStorageUsed() + document.getFileSizeBytes();
+        uploader.setStorageUsed(used);
+        Integer planId = uploader.getPlanId() != null ? uploader.getPlanId() : 1;
+        long limit = storagePlanRepository.findById(planId)
+                .map(StoragePlanEntity::getStorageLimit)
+                .orElse(0L);
+        if (used > limit && UserStatus.ACTIVE.equals(uploader.getStatus())) {
+            uploader.setStatus(UserStatus.OVERLIMITSTORAGE); // still readable, only blocks new uploads
+        }
+        userRepository.save(uploader);
+
+        // --- share link: the old token was nulled at delete-time; mint a new one only for PUBLIC + COMPLETED ---
+        if (pre == DocumentStatus.COMPLETED && DocumentVisibility.PUBLIC.equals(document.getVisibility())) {
+            document.setLinkShare("doc-" + UUID.randomUUID());
+        }
+        documentRepository.save(document);
+
+        // --- notify owner ---
+        notificationRepository.save(NotificationEntity.builder()
+                .user(uploader)
+                .title("Document Restored")
+                .content("Your document '" + document.getTitle() + "' has been restored.")
+                .type("DOCUMENT_RESTORED")
+                .targetId(document.getId().toString())
+                .isRead(false)
+                .build());
+
+        // RAG: nothing to do — the index is intact (lazy purge). That is the whole point of Plan A.
+        log.info("Document {} restored to status {}", documentId, pre);
     }
 
     @Override

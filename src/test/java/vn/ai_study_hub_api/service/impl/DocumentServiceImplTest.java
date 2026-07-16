@@ -360,8 +360,11 @@ public class DocumentServiceImplTest {
 
         assertNull(mockDocument.getLinkShare());
         assertEquals(DocumentStatus.DELETED, mockDocument.getStatus());
+        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatusBeforeDeletion());
+        assertFalse(mockDocument.getDeletedByAdmin());
         assertNotNull(mockDocument.getDeletedAt());
         verify(documentRepository, times(1)).save(mockDocument);
+        verify(ragClient, never()).deleteVectors(any()); // lazy purge: RAG untouched at soft-delete
     }
 
     @Test
@@ -441,12 +444,144 @@ public class DocumentServiceImplTest {
 
         documentService.hardDeleteDocument(documentId);
 
+        // RAG purge runs FIRST (needs chunks present), then S3, then DB dependents + row.
+        org.mockito.InOrder inOrder = inOrder(ragClient, documentRepository);
+        inOrder.verify(ragClient, times(1)).deleteVectors(documentId);
+        inOrder.verify(documentRepository, times(1)).delete(mockDocument);
+
         verify(uploadProvider, times(1)).delete(filePath);
         verify(uploadProvider, times(1)).delete(previewPath);
         verify(reviewRepository, times(1)).deleteByDocumentId(documentId);
         verify(reportRepository, times(1)).deleteByDocumentId(documentId);
         verify(documentRepository, times(1)).deleteSessionDocumentsByDocumentId(documentId);
         verify(documentRepository, times(1)).delete(mockDocument);
+    }
+
+    @Test
+    void restoreDocument_Success_PublicCompleted_MintsShareLinkAndRestoresStorage() {
+        mockDocument.setStatus(DocumentStatus.DELETED);
+        mockDocument.setStatusBeforeDeletion(DocumentStatus.COMPLETED);
+        mockDocument.setDeletedByAdmin(false);
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setLinkShare(null);
+        mockDocument.setFileSizeBytes(100L);
+        mockUser.setStorageUsed(50L);
+        mockUser.setPlanId(1);
+        mockUser.setStatus(UserStatus.ACTIVE);
+
+        StoragePlanEntity plan = StoragePlanEntity.builder().id(1).storageLimit(1000L).build();
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(plan));
+
+        documentService.restoreDocument(documentId, userId);
+
+        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatus());
+        assertNull(mockDocument.getDeletedAt());
+        assertNull(mockDocument.getStatusBeforeDeletion());
+        assertFalse(mockDocument.getDeletedByAdmin());
+        assertNotNull(mockDocument.getLinkShare());
+        assertTrue(mockDocument.getLinkShare().startsWith("doc-"));
+        assertEquals(150L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.ACTIVE, mockUser.getStatus());
+        verify(userRepository, times(1)).save(mockUser);
+        verify(documentRepository, times(1)).save(mockDocument);
+        verify(notificationRepository, times(1)).save(any(NotificationEntity.class));
+        verify(ragClient, never()).deleteVectors(any()); // restore never touches RAG (index intact)
+    }
+
+    @Test
+    void restoreDocument_Success_Private_DoesNotMintShareLink() {
+        mockDocument.setStatus(DocumentStatus.DELETED);
+        mockDocument.setStatusBeforeDeletion(DocumentStatus.COMPLETED);
+        mockDocument.setDeletedByAdmin(false);
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setLinkShare(null);
+        mockDocument.setFileSizeBytes(100L);
+        mockUser.setStorageUsed(50L);
+        mockUser.setPlanId(1);
+        mockUser.setStatus(UserStatus.ACTIVE);
+
+        StoragePlanEntity plan = StoragePlanEntity.builder().id(1).storageLimit(1000L).build();
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(plan));
+
+        documentService.restoreDocument(documentId, userId);
+
+        assertEquals(DocumentStatus.COMPLETED, mockDocument.getStatus());
+        assertNull(mockDocument.getLinkShare()); // share link only minted for PUBLIC + COMPLETED
+        verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
+    void restoreDocument_OverQuota_SetsOverLimitStorage() {
+        mockDocument.setStatus(DocumentStatus.DELETED);
+        mockDocument.setStatusBeforeDeletion(DocumentStatus.COMPLETED);
+        mockDocument.setDeletedByAdmin(false);
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        mockDocument.setVisibility(DocumentVisibility.PRIVATE);
+        mockDocument.setFileSizeBytes(150L);
+        mockUser.setStorageUsed(50L);
+        mockUser.setPlanId(1);
+        mockUser.setStatus(UserStatus.ACTIVE);
+
+        StoragePlanEntity plan = StoragePlanEntity.builder().id(1).storageLimit(100L).build();
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(plan));
+
+        documentService.restoreDocument(documentId, userId);
+
+        assertEquals(200L, mockUser.getStorageUsed());
+        assertEquals(UserStatus.OVERLIMITSTORAGE, mockUser.getStatus());
+        verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
+    void restoreDocument_NotDeleted_BadRequest() {
+        mockDocument.setStatus(DocumentStatus.COMPLETED); // not DELETED
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> documentService.restoreDocument(documentId, userId));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+    }
+
+    @Test
+    void restoreDocument_AdminDeleted_Forbidden() {
+        mockDocument.setStatus(DocumentStatus.DELETED);
+        mockDocument.setDeletedByAdmin(true);
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> documentService.restoreDocument(documentId, userId));
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+    }
+
+    @Test
+    void restoreDocument_NotOwner_Forbidden() {
+        UserEntity other = UserEntity.builder()
+                .id(UUID.randomUUID()).email("other@example.com")
+                .fullName("Other").status(UserStatus.ACTIVE).build();
+        mockDocument.setUploader(other);
+        mockDocument.setStatus(DocumentStatus.DELETED);
+        mockDocument.setDeletedByAdmin(false);
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> documentService.restoreDocument(documentId, userId));
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+    }
+
+    @Test
+    void restoreDocument_PreStatusUploading_BadRequest() {
+        mockDocument.setStatus(DocumentStatus.DELETED);
+        mockDocument.setStatusBeforeDeletion(DocumentStatus.UPLOADING);
+        mockDocument.setDeletedByAdmin(false);
+        mockDocument.setDeletedAt(java.time.LocalDateTime.now());
+        when(documentRepository.findByIdWithUploader(documentId)).thenReturn(Optional.of(mockDocument));
+
+        AppException ex = assertThrows(AppException.class, () -> documentService.restoreDocument(documentId, userId));
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
     }
 
     @Test
