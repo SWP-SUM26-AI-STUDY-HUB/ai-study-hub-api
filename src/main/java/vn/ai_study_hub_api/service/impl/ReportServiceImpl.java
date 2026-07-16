@@ -122,6 +122,8 @@ public class ReportServiceImpl implements ReportService {
         // thay đổi trạng thái thành delete và update storage
         if (document.getDeletedAt() == null && !vn.ai_study_hub_api.model.DocumentStatus.DELETED.equals(document.getStatus())) {
             vn.ai_study_hub_api.model.DocumentStatus originalStatus = document.getStatus();
+            document.setStatusBeforeDeletion(originalStatus);
+            document.setDeletedByAdmin(true);
             document.setDeletedAt(java.time.LocalDateTime.now());
             document.setStatus(vn.ai_study_hub_api.model.DocumentStatus.DELETED);
             document.setLinkShare(null);

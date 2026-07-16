@@ -72,6 +72,18 @@ public class DocumentEntity implements Persistable<UUID> {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Enumerated(EnumType.STRING)
+    @ColumnTransformer(
+            read = "UPPER(status_before_deletion::text)",
+            write = "cast(LOWER(?) as document_status)"
+    )
+    @Column(name = "status_before_deletion", columnDefinition = "document_status")
+    private DocumentStatus statusBeforeDeletion;
+
+    @Column(name = "deleted_by_admin")
+    @Builder.Default
+    private Boolean deletedByAdmin = false;
+
     @Column(name = "rejection_reason", columnDefinition = "TEXT")
     private String rejectionReason;
 
