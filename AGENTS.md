@@ -76,7 +76,7 @@ docker compose up --build -d
 ```
 
 - **Swagger UI**: `http://localhost:8080/swagger-ui/index.html`. Actuator is locked down: only `health`/`info` are exposed over HTTP, and `/actuator/**` (except `/actuator/health`) requires `ROLE_ADMIN` (see `SecurityConfig`).
-- **Profile wiring**: Maven `dev` profile (default) / `prod` set `spring.profiles.active`, injected into `application.yaml` via the `@spring.profiles.active@` resource-filtering placeholder. Both profiles use `ddl-auto: update`.
+- **Profile wiring & schema management (prod)**: The Dockerfile runs `mvn clean package` (no `-Pprod`), `docker-compose.yaml` sets no `SPRING_PROFILES_ACTIVE`, and the `@spring.profiles.active@` resource-filtering placeholder was removed from `application.yaml` in commit `0be48d3` — so **no Spring profile is active in the prod image**. `application-prod.yaml` (the only file that sets `spring.jpa.hibernate.ddl-auto: update`) therefore never loads, and Hibernate runs with the default **`ddl-auto: none`**. **Schema changes must be applied manually** (`initdb.sql` for a fresh data volume + idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS …` on the running DB); restarting the app does **not** auto-migrate. Locally, `./mvnw spring-boot:run -Dspring-boot.run.profiles=dev` activates `application-dev.yaml` (which does set `ddl-auto: update`).
 - **CI** (`.github/workflows/workflow.yml`): a `build-test` job runs `mvn -B clean test` on JDK 21 for every push to `main` and every PR; the `deploy` job (`needs: build-test`, main-only) SSH-deploys to the VPS and runs `docker compose up --build -d`. The Dockerfile builds with tests enabled (no `-DskipTests`), so a failing test blocks both the image build and the deploy.
 
 ## Code Conventions & Common Patterns

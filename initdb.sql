@@ -102,7 +102,8 @@ CREATE TABLE "documents" (
   "deleted_at" timestamp,
   "status_before_deletion" document_status,
   "deleted_by_admin" boolean DEFAULT false,
-  "rejection_reason" text
+  "rejection_reason" text,
+  "download_count" integer NOT NULL DEFAULT 0
 );
 
 CREATE TABLE "tags" (
@@ -208,6 +209,10 @@ ALTER TABLE "users" ADD COLUMN "bio" TEXT;
 ALTER TABLE "documents" ADD COLUMN "summary" TEXT;
 
 ALTER TABLE "documents" ADD COLUMN "description" TEXT;
+
+ALTER TABLE "documents" ADD COLUMN IF NOT EXISTS "content_hash" varchar(64);
+
+CREATE INDEX IF NOT EXISTS "documents_content_hash_idx" ON "documents" ("content_hash");
 
 ALTER TABLE "users" ADD FOREIGN KEY ("plan_id") REFERENCES "storage_plans" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 

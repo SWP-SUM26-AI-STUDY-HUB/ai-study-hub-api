@@ -24,6 +24,8 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
     @Query("SELECT d FROM DocumentEntity d WHERE d.uploader.id = :uploaderId AND d.deletedAt IS NULL")
     List<DocumentEntity> findActiveDocumentsByUploaderId(@Param("uploaderId") UUID uploaderId);
 
+    Optional<DocumentEntity> findFirstByContentHashAndDeletedAtIsNull(String contentHash);
+
     @Query("SELECT d FROM DocumentEntity d WHERE d.status = :status AND d.visibility = :visibility AND d.deletedAt IS NULL")
     List<DocumentEntity> findPendingPublicDocuments(
             @Param("status") DocumentStatus status,

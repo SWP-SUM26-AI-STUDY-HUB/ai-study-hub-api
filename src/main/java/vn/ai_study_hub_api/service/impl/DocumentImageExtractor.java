@@ -13,6 +13,7 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFPictureData;
 import org.springframework.stereotype.Component;
 import vn.ai_study_hub_api.service.UploadProvider;
+import vn.ai_study_hub_api.common.HashUtil;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -21,8 +22,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -97,7 +96,7 @@ public class DocumentImageExtractor {
                         if ((long) img.getWidth() * img.getHeight() > MAX_IMAGE_PIXELS) continue;
                         byte[] jpg = toJpeg(img.getImage());
                         if (jpg == null || jpg.length > MAX_IMAGE_BYTES) continue;
-                        if (!seen.add(sha256(jpg))) continue;
+                        if (!seen.add(HashUtil.sha256Hex(jpg))) continue;
                         out.add(new ExtractedImage(jpg, "image/jpeg"));
                     } catch (IOException ex) {
                         log.debug("Skipping unreadable PDF image: {}", ex.getMessage());
@@ -122,7 +121,7 @@ public class DocumentImageExtractor {
                 if (mime == null) continue;
                 byte[] data = pic.getData();
                 if (data == null || data.length == 0 || data.length > MAX_IMAGE_BYTES) continue;
-                if (!seen.add(sha256(data))) continue;
+                if (!seen.add(HashUtil.sha256Hex(data))) continue;
                 out.add(new ExtractedImage(data, mime));
             }
         } catch (IOException e) {
@@ -152,19 +151,5 @@ public class DocumentImageExtractor {
         String raw = (fileType != null && !fileType.isBlank()) ? fileType : storagePath;
         int dot = raw.lastIndexOf('.');
         return (dot >= 0 ? raw.substring(dot + 1) : raw).toLowerCase(Locale.ROOT);
-    }
-
-    private static String sha256(byte[] data) {
-        try {
-            byte[] hash = MessageDigest.getInstance("SHA-256").digest(data);
-            StringBuilder sb = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is mandatory in every JDK; this is purely defensive.
-            return Integer.toHexString(java.util.Arrays.hashCode(data));
-        }
     }
 }

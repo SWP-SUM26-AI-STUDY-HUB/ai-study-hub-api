@@ -177,6 +177,36 @@ public class DocumentServiceImplTest {
     }
 
     @Test
+    void initiateUpload_DuplicateContent_Conflict() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "dup.pdf", "application/pdf", "pdf content".getBytes());
+
+        StoragePlanEntity mockPlan = StoragePlanEntity.builder()
+                .id(1)
+                .name("Free")
+                .storageLimit(1L * 1024L * 1024L * 1024L) // 1 GB
+                .maxAiRequestsPerDay(15)
+                .build();
+
+        DocumentEntity existing = DocumentEntity.builder()
+                .id(UUID.randomUUID())
+                .title("Existing")
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(storagePlanRepository.findById(1)).thenReturn(Optional.of(mockPlan));
+        when(documentRepository.findFirstByContentHashAndDeletedAtIsNull(anyString()))
+                .thenReturn(Optional.of(existing));
+
+        AppException exception = assertThrows(AppException.class, () ->
+                documentService.initiateUpload(file, "Dup", List.of(1), null, DocumentVisibility.PRIVATE, userId));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatus());
+        assertEquals("Document with identical content already exists", exception.getMessage());
+        verify(documentRepository, never()).save(any(DocumentEntity.class));
+    }
+
+    @Test
     void initiateUpload_UserNotFound() {
         MockMultipartFile file = new MockMultipartFile(
                 "file",

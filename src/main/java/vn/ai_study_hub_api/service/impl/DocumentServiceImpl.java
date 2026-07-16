@@ -9,6 +9,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import vn.ai_study_hub_api.common.HashUtil;
 import vn.ai_study_hub_api.config.CacheConfig;
 import vn.ai_study_hub_api.controller.request.UpdateDocumentRequest;
 import vn.ai_study_hub_api.controller.response.DocumentAccessResponse;
@@ -118,6 +119,20 @@ public class DocumentServiceImpl implements DocumentService {
         if (uploader.getStorageUsed() + file.getSize() > limitInBytes) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Upload failed: file size exceeds remaining storage quota");
         }
+        // Duplicate detection (Tier 1): reject exact re-uploads by SHA-256 content hash.
+        String contentHash;
+        try {
+            contentHash = HashUtil.sha256Hex(file.getBytes());
+        } catch (java.io.IOException e) {
+            throw new AppException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to read uploaded file content");
+        }
+        documentRepository.findFirstByContentHashAndDeletedAtIsNull(contentHash)
+                .ifPresent(existing -> {
+                    log.warn("Rejected duplicate upload: content hash {} already used by document {}",
+                            contentHash, existing.getId());
+                    throw new AppException(HttpStatus.CONFLICT,
+                            "Document with identical content already exists");
+                });
 
         List<TagEntity> tagEntities = resolveTags(tags, userId);
 
@@ -136,6 +151,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileUrl(storagePath)
                 .fileType(fileExtension)
                 .fileSizeBytes(file.getSize())
+                .contentHash(contentHash)
                 .status(DocumentStatus.UPLOADING)
                 .description(description)
                 .visibility(visibility != null ? visibility : DocumentVisibility.PRIVATE)
