@@ -87,7 +87,11 @@ fastapi:
   base-url: ${FASTAPI_BASE_URL:http://localhost:8000/api/v1/rag}
   rag-process-url: ${FASTAPI_RAG_PROCESS_URL:http://localhost:8000/api/v1/rag/process}
   rag-chat-url: ${FASTAPI_RAG_CHAT_URL:http://localhost:8000/api/v1/chat}
+  rag-quiz-url: ${FASTAPI_RAG_QUIZ_URL:http://localhost:8000/api/v1/quiz/generate}
+  rag-flashcard-url: ${FASTAPI_RAG_FLASHCARD_URL:http://localhost:8000/api/v1/flashcard/generate}
   chat-timeout-seconds: ${FASTAPI_CHAT_TIMEOUT_SECONDS:30}
+  # Generation (quiz/flashcard) makes a larger Gemini call than chat (many items) -> longer ceiling.
+  study-material-timeout-seconds: ${FASTAPI_STUDY_MATERIAL_TIMEOUT_SECONDS:60}
 
 app:
   share-url-prefix: ${SHARE_URL_PREFIX:http://localhost:5173/shared/}
