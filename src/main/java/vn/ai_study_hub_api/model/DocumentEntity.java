@@ -36,6 +36,9 @@ public class DocumentEntity implements Persistable<UUID> {
     @Column(name = "file_size_bytes", nullable = false)
     private Long fileSizeBytes;
 
+    @Column(name = "content_hash", length = 64)
+    private String contentHash;
+
     @Enumerated(EnumType.STRING)
     @ColumnTransformer(
             read = "UPPER(status::text)",
