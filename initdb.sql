@@ -143,6 +143,7 @@ CREATE TABLE "chat_messages" (
   "sender" message_sender NOT NULL,
   "content" text NOT NULL,
   "citations" jsonb,
+  "material_payload" jsonb,
   "created_at" timestamp DEFAULT (now())
 );
 

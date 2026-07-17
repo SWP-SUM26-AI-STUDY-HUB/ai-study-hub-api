@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Quiz generation result returned to the frontend.
@@ -24,4 +25,6 @@ public class QuizGenerateResponse {
     private List<QuizQuestionResponse> quiz;
     private int remainingRequests;
     private int dailyLimit;
+    /** Session the generated quiz was persisted to (for chat-history continuity). */
+    private UUID sessionId;
 }
