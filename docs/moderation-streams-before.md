@@ -1,19 +1,19 @@
-# Auto-Moderation — Trạng thái HIỆN TẠI (trước Redis Streams)
+# Auto-Moderation — CURRENT state (before Redis Streams)
 
-> Mục đích: mô tả chính xác luồng moderation đang chạy trong code để có baseline so sánh khi chuyển sang
-> `stream:moderation`. Mọi tham chiếu class/method/dòng đều bám source tree hiện tại.
+> Purpose: accurately describe the moderation flow currently running in the code, to provide a baseline for comparison when moving to
+> `stream:moderation`. All class/method/line references follow the current source tree.
 
-## 1. Luồng ở mức cao
+## 1. High-level flow
 
-Moderation được đốt ở **2 điểm** (cả hai đều gọi cùng `moderateDocumentAsync` → cùng logic triage):
+Moderation is triggered at **2 points** (both call the same `moderateDocumentAsync` → same triage logic):
 
-| # | Trigger | Ngữ cảnh | Tại sao đọc được chunks ngay |
+| # | Trigger | Context | Why chunks are available right away |
 |---|---|---|---|
-| **T1** | callback `EXTRACTED` từ RAG (`handleFastApiCallback`) | Upload **PUBLIC**: RAG `/extract` xong | RAG vừa tạo chunks (`embedding=NULL`) |
-| **T2** | `updateDocument` PRIVATE→PUBLIC (`triggerModeration=true`) | Doc private đã index, user đổi sang public | Chunks **đã embedded sẵn** (upload private đã `/process`) — đọc luôn, không cần `/extract` |
+| **T1** | `EXTRACTED` callback from RAG (`handleFastApiCallback`) | **PUBLIC** upload: RAG `/extract` done | RAG just created chunks (`embedding=NULL`) |
+| **T2** | `updateDocument` PRIVATE→PUBLIC (`triggerModeration=true`) | Private doc already indexed, user switches to public | Chunks **already embedded** (private upload already ran `/process`) — read directly, no `/extract` needed |
 
 ```
-RAG /extract xong                         user đổi PRIVATE -> PUBLIC
+RAG /extract done                         user switches PRIVATE -> PUBLIC
    │  POST /callback {status:EXTRACTED}      │  PUT /documents/{id} {visibility:public}
    ▼                                         ▼
 handleFastApiCallback  (T1)                 updateDocument  (T2)
@@ -22,13 +22,13 @@ handleFastApiCallback  (T1)                 updateDocument  (T2)
    autoModerationService.moderateDocumentAsync(documentId)   // @Async("taskExecutor")
 ```
 
-> Cả T1 và T2 **đều không retry** — lỗi chỉ `log + giữ PENDING` (xem gap G2).
+> Both T1 and T2 **do NOT retry** — errors are only `log + keep PENDING` (see gap G2).
 
-## 2. Trigger points (code thật)
+## 2. Trigger points (actual code)
 
-`service/impl/DocumentServiceImpl.java` — **2 call site**:
+`service/impl/DocumentServiceImpl.java` — **2 call sites**:
 
-**T1 — nhánh `EXTRACTED` trong `handleFastApiCallback` (~dòng 249):**
+**T1 — the `EXTRACTED` branch inside `handleFastApiCallback` (~line 249):**
 ```java
 } else if ("EXTRACTED".equalsIgnoreCase(status)) {
     if (summary != null && !summary.trim().isEmpty()) document.setSummary(summary);
@@ -37,26 +37,26 @@ handleFastApiCallback  (T1)                 updateDocument  (T2)
 }
 ```
 
-**T2 — nhánh PRIVATE→PUBLIC trong `updateDocument` (~dòng 398–425):**
+**T2 — the PRIVATE→PUBLIC branch inside `updateDocument` (~lines 398–425):**
 ```java
 if (DocumentVisibility.PUBLIC.equals(newVisibility)) {        // PRIVATE -> PUBLIC
     document.setStatus(DocumentStatus.PENDING);
     createPendingApprovalNotifications(document);
-    triggerModeration = true;                                  // ← bật cờ
+    triggerModeration = true;                                  // ← flip the flag
 }
 // ... documentRepository.save(document) ...
 if (triggerModeration) {
     autoModerationService.moderateDocumentAsync(documentId);   // ← T2
 }
-// NOTE: KHÔNG gọi RAG /extract ở đây — chunks đã embedded sẵn (upload private đã /process),
-//       nên moderation đọc document_chunks ngay. RAG visibility chỉ flip sang public ở approveDocument.
+// NOTE: does NOT call RAG /extract here — chunks are already embedded (private upload already ran /process),
+//       so moderation reads document_chunks directly. RAG visibility only flips to public in approveDocument.
 ```
 
-Các lưu ý:
-- T1 (callback) được RAG **thử lại 3× với backoff**. T2 không có cơ chế retry nào ở tầng gọi. **Bản thân job moderation KHÔNG có retry** ở cả 2 đường.
-- T2 **không** có `EXTRACTED` callback (vì không extract lại) — moderation được gọi **trực tiếp trong process**, không qua callback RAG.
+Notes:
+- T1 (callback) is retried by RAG **3× with backoff**. T2 has no retry mechanism at the caller layer. **The moderation job itself has NO retry** on either path.
+- T2 **does not** have an `EXTRACTED` callback (because it does not re-extract) — moderation is called **directly in-process**, not via a RAG callback.
 
-## 3. Cơ chế thực thi: `@Async("taskExecutor")`
+## 3. Execution mechanism: `@Async("taskExecutor")`
 
 `service/impl/AutoModerationServiceImpl.java`:
 
@@ -66,72 +66,72 @@ Các lưu ý:
 public void moderateDocumentAsync(UUID documentId) { ... }
 ```
 
-- Chạy trên `ThreadPoolTaskExecutor` (`config/AsyncConfig`): core 5 / max 20 / **queue 100** (RAM),
-  virtual threads bật, prefix `doc-async-`.
-- Queue nằm **trong RAM của process**. Không persistent, không ghi đĩa/Redis.
+- Runs on a `ThreadPoolTaskExecutor` (`config/AsyncConfig`): core 5 / max 20 / **queue 100** (RAM),
+  virtual threads enabled, prefix `doc-async-`.
+- The queue lives **in process RAM**. It is not persistent, and is not written to disk/Redis.
 
-## 4. Logic triage (đã có, giữ nguyên khi migrate)
+## 4. Triage logic (already exists, kept unchanged when migrating)
 
-Bên trong `moderateDocumentAsync`:
+Inside `moderateDocumentAsync`:
 
-1. Load document → **bỏ qua nếu status ≠ `PENDING`** (idempotency-guard quan trọng).
-2. Đọc chunks read-only qua `DocumentChunkRepository.findChunkContentsByDocumentId` (bảng `document_chunks`,
-   do RAG sở hữu — backend chỉ đọc).
-3. Bỏ qua (giữ `PENDING`) nếu: `openai.api-key` rỗng/`mock_key`, hoặc không có chunk, hoặc chunk toàn rỗng.
-4. Gọi **OpenAI Moderation API** (qua shared `WebClient` bean, `.block()`), chia batch **≤ 30 chunk/lần**.
-5. Tính `maxScore` = điểm cao nhất trên **mọi chunk × mọi category**. Triage 3 vùng:
-   - `maxScore ≥ 0.80` → `documentService.rejectDocument(id, lý-do-tiếng-Việt)` (generate reason).
+1. Load document → **skip if status ≠ `PENDING`** (important idempotency guard).
+2. Read chunks read-only via `DocumentChunkRepository.findChunkContentsByDocumentId` (table `document_chunks`,
+   owned by RAG — backend only reads).
+3. Skip (keep `PENDING`) if: `openai.api-key` is empty/`mock_key`, or there is no chunk, or every chunk is empty.
+4. Call the **OpenAI Moderation API** (via the shared `WebClient` bean, `.block()`), batched **≤ 30 chunks per call**.
+5. Compute `maxScore` = the highest score across **all chunks × all categories**. Triage into 3 zones:
+   - `maxScore ≥ 0.80` → `documentService.rejectDocument(id, reason-in-Vietnamese)` (generate reason).
    - `maxScore < 0.40` → `documentService.approveDocument(id)`.
-   - `0.40 ≤ maxScore < 0.80` → **giữ `PENDING`** (admin duyệt tay).
-6. Toàn bộ bọc `try/catch (Exception)` → bắt lỗi → **log + giữ `PENDING`** (không ném, không retry).
+   - `0.40 ≤ maxScore < 0.80` → **keep `PENDING`** (admin reviews manually).
+6. Everything is wrapped in `try/catch (Exception)` → catches errors → **log + keep `PENDING`** (no throw, no retry).
 
-`approveDocument` / `rejectDocument` được gọi **trong cùng Spring context** (không HTTP/JWT).
+`approveDocument` / `rejectDocument` are called **within the same Spring context** (no HTTP/JWT).
 
-## 5. Sơ đồ luồng hiện tại
+## 5. Current flow diagram
 
 ```mermaid
 flowchart TD
-    RAG["RAG /extract xong"] -->|"POST /callback EXTRACTED"| CB["handleFastApiCallback (T1)"]
-    UPD2["updateDocument<br/>PRIVATE→PUBLIC (T2)"] --> DB2[("documents PENDING<br/>chunks đã embedded")]
-    CB -->|"status GIỮ PENDING + ghi summary"| DB[("documents")]
+    RAG["RAG /extract done"] -->|"POST /callback EXTRACTED"| CB["handleFastApiCallback (T1)"]
+    UPD2["updateDocument<br/>PRIVATE→PUBLIC (T2)"] --> DB2[("documents PENDING<br/>chunks already embedded")]
+    CB -->|"keep status PENDING + write summary"| DB[("documents")]
     CB -->|"@Async fire-and-forget<br/>moderateDocumentAsync(id)"| Q["taskExecutor queue<br/>(RAM, cap 100)"]
     UPD2 -->|"triggerModeration → @Async<br/>moderateDocumentAsync(id)"| Q
     Q --> W["doc-async- worker thread"]
-    W --> CHK{"status == PENDING?<br/>có key?<br/>có chunk?"}
-    CHK -->|không| STUCK1(["giữ PENDING<br/>(lặng thinh)"])
-    CHK -->|có| OAI["OpenAI Moderation<br/>batches ≤30, .block()"]
+    W --> CHK{"status == PENDING?<br/>has key?<br/>has chunk?"}
+    CHK -->|no| STUCK1(["keep PENDING<br/>(silent)"])
+    CHK -->|yes| OAI["OpenAI Moderation<br/>batches ≤30, .block()"]
     OAI --> T{maxScore}
     T -->|"≥0.80"| REJ["rejectDocument"]
     T -->|"<0.40"| APR["approveDocument"]
-    T -->|"0.40–0.80"| PEN(["giữ PENDING<br/>admin duyệt"])
-    OAI -. "HTTP error → catch(Exception)" .-> STUCK2(["log + giữ PENDING<br/>KHÔNG retry"])
+    T -->|"0.40–0.80"| PEN(["keep PENDING<br/>admin review"])
+    OAI -. "HTTP error → catch(Exception)" .-> STUCK2(["log + keep PENDING<br/>NO retry"])
 
-    Q -. "app crash / restart" .-> LOST(["job MẤT<br/>doc kẹt PENDING vĩnh viễn"])
+    Q -. "app crash / restart" .-> LOST(["job LOST<br/>doc stuck PENDING forever"])
 ```
 
-## 6. Các khoảng trống (gap) — lý do cần Redis Streams
+## 6. Gaps — why Redis Streams is needed
 
-| # | Gap | Hệ quả |
+| # | Gap | Consequence |
 |---|-----|--------|
-| G1 | **Không persistent** — job nằm trong `taskExecutor` queue (RAM). Crash/restart giữa chừng → job mất. | Document đã `PENDING` nhưng moderation **không bao giờ chạy lại** → kẹt vĩnh viễn, không có bản ghi gì để trace. |
-| G2 | **Không retry** — `catch(Exception)` chỉ `log.error` rồi giữ `PENDING`. Lỗi OpenAI (timeout/429/5xx) transient cũng không được thử lại. | Một lỗi nhất thời → admin phải duyệt tay, hoặc doc chết ở `PENDING`. |
-| G3 | **Caller-runs backpressure** — khi queue đầy (cap 100), `taskExecutor` chạy job ngay trên **request thread của callback** (CallerRunsPolicy). | RAG gọi callback bị **block** chờ moderation (gọi OpenAI chậm) → RAG có thể timeout callback. |
-| G4 | **Không quan sát** — không phân biệt được một doc `PENDING` là do "vùng vàng chờ admin" hay do "moderation crash/error chưa kịp xử lý". | Khó debug, khó alert. |
-| G5 | **Không scale ngang** — queue là per-process. 2 instance chạy thì mỗi instance tự queue, document rơi vào instance chết sẽ không được xử lý. | Triển khai multi-instance bị phân mảnh tải. |
+| G1 | **Not persistent** — the job sits in the `taskExecutor` queue (RAM). A crash/restart mid-run loses the job. | The document is already `PENDING` but moderation **never runs again** → stuck forever, with no record to trace. |
+| G2 | **No retry** — `catch(Exception)` only does `log.error` then keeps `PENDING`. Transient OpenAI errors (timeout/429/5xx) are never retried. | One transient error → admin must review manually, or the doc dies at `PENDING`. |
+| G3 | **Caller-runs backpressure** — when the queue is full (cap 100), `taskExecutor` runs the job directly on the **callback request thread** (CallerRunsPolicy). | The RAG callback is **blocked** waiting for moderation (slow OpenAI call) → RAG may time out the callback. |
+| G4 | **No observability** — cannot tell whether a `PENDING` doc is in the "gray zone waiting for admin" or "moderation crashed/errored before finishing". | Hard to debug, hard to alert. |
+| G5 | **No horizontal scaling** — the queue is per-process. With 2 instances, each instance has its own queue, and documents that land on a dead instance are never processed. | Multi-instance deployment fragments the load. |
 
-> G1 + G2 là gốc rễ: moderation là job **business-critical, idempotent** (chạy lại trên cùng chunks → cùng triage),
-> lại đang chạy fire-and-forget trên RAM → đúng kiểu use-case mà Redis Streams giải.
+> G1 + G2 are the root cause: moderation is a **business-critical, idempotent** job (rerunning on the same chunks → same triage result),
+> yet it runs fire-and-forget in RAM — exactly the use case that Redis Streams solves.
 
-## 7. Tóm tắt file/class hiện tại liên quan
+## 7. Summary of current related files/classes
 
-| File | Vai trò |
+| File | Role |
 |------|---------|
-| `service/AutoModerationService.java` | interface, method duy nhất `void moderateDocumentAsync(UUID)`. |
-| `service/impl/AutoModerationServiceImpl.java` | `@Async` triage (load doc → chunks → OpenAI → approve/reject/PENDING). DTO lồng `ModerationRequest/Response/Result`. |
-| `service/impl/DocumentServiceImpl.java` | **2 trigger**: `handleFastApiCallback` (nhánh `EXTRACTED`, T1) + `updateDocument` (PRIVATE→PUBLIC, T2). |
+| `service/AutoModerationService.java` | interface, single method `void moderateDocumentAsync(UUID)`. |
+| `service/impl/AutoModerationServiceImpl.java` | `@Async` triage (load doc → chunks → OpenAI → approve/reject/PENDING). Nested DTOs `ModerationRequest/Response/Result`. |
+| `service/impl/DocumentServiceImpl.java` | **2 triggers**: `handleFastApiCallback` (`EXTRACTED` branch, T1) + `updateDocument` (PRIVATE→PUBLIC, T2). |
 | `repository/DocumentChunkRepository.java` | `findChunkContentsByDocumentId` (native, read-only `document_chunks`). |
-| `config/AsyncConfig.java` | `taskExecutor` (nơi job đang chạy). |
+| `config/AsyncConfig.java` | `taskExecutor` (where the job currently runs). |
 
 ---
 
-Xem tiếp: [`moderation-streams-after.md`](./moderation-streams-after.md) — thiết kế + cách triển khai Redis Streams.
+See next: [`moderation-streams-after.md`](./moderation-streams-after.md) — design + how to implement Redis Streams.

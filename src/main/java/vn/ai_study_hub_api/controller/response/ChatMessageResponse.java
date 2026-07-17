@@ -18,5 +18,9 @@ public class ChatMessageResponse {
     private String sender;
     private String content;
     private List<CitationView> citations;
+    /** "QUIZ" or "FLASHCARD" when this bot message carries a study-material payload; null otherwise. */
+    private String materialType;
+    private List<QuizQuestionResponse> quiz;
+    private List<FlashcardItemResponse> flashcards;
     private LocalDateTime createdAt;
 }

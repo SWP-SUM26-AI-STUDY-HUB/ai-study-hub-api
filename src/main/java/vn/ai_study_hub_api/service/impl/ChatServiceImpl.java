@@ -14,6 +14,8 @@ import vn.ai_study_hub_api.controller.response.ChatResponse;
 import vn.ai_study_hub_api.controller.response.ChatSessionResponse;
 import vn.ai_study_hub_api.controller.response.CitationView;
 import vn.ai_study_hub_api.controller.response.QuotaResponse;
+import vn.ai_study_hub_api.controller.response.FlashcardItemResponse;
+import vn.ai_study_hub_api.controller.response.QuizQuestionResponse;
 import vn.ai_study_hub_api.exception.AppException;
 import vn.ai_study_hub_api.model.ChatMessageEntity;
 import vn.ai_study_hub_api.model.ChatSessionEntity;
@@ -382,12 +384,34 @@ public class ChatServiceImpl implements ChatService {
     }
 
     private ChatMessageResponse toMessageResponse(ChatMessageEntity message) {
-        return ChatMessageResponse.builder()
+        ChatMessageResponse.ChatMessageResponseBuilder builder = ChatMessageResponse.builder()
                 .id(message.getId())
                 .sender(message.getSender() != null ? message.getSender().name().toLowerCase() : null)
                 .content(message.getContent())
                 .citations(readCitationsJson(message.getCitations()))
-                .createdAt(message.getCreatedAt())
-                .build();
+                .createdAt(message.getCreatedAt());
+
+        // Study-material (quiz/flashcard) bot messages carry a structured payload alongside
+        // the textual content. Parse it so ChatHistoryPage can render cards, not just text.
+        String payload = message.getMaterialPayload();
+        if (payload != null && !payload.isBlank()) {
+            try {
+                JsonNode node = objectMapper.readTree(payload);
+                String type = node.path("type").asText(null);
+                JsonNode items = node.path("items");
+                if ("QUIZ".equals(type) && items.isArray()) {
+                    builder.materialType("QUIZ")
+                            .quiz(objectMapper.readValue(objectMapper.writeValueAsString(items),
+                                    new TypeReference<List<QuizQuestionResponse>>() {}));
+                } else if ("FLASHCARD".equals(type) && items.isArray()) {
+                    builder.materialType("FLASHCARD")
+                            .flashcards(objectMapper.readValue(objectMapper.writeValueAsString(items),
+                                    new TypeReference<List<FlashcardItemResponse>>() {}));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse material payload: {}", e.getMessage());
+            }
+        }
+        return builder.build();
     }
 }

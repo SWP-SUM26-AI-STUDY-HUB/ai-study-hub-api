@@ -1,75 +1,75 @@
-# Auto-Moderation — Thiết kế SAU khi dùng Redis Streams (`stream:moderation`)
+# Auto-Moderation — Design AFTER using Redis Streams (`stream:moderation`)
 
-> Đối chiếu baseline: [`moderation-streams-before.md`](./moderation-streams-before.md).
-> Mục tiêu: biến moderation từ job `@Async` fire-and-forget trên RAM thành **job queue durable, at-least-once,
-> có retry/DLQ, scale ngang được** — mà không thêm infra mới (dùng chung Redis đang có).
+> Baseline comparison: [`moderation-streams-before.md`](./moderation-streams-before.md).
+> Goal: turn moderation from a fire-and-forget `@Async` job in RAM into a **durable, at-least-once job queue,
+> with retry/DLQ, horizontally scalable** — without adding new infrastructure (reuse the existing Redis).
 
-## 1. Kiến trúc tổng quan
+## 1. Overall architecture
 
 ```
-                 PRODUCE (Tomcat request thread)                      CONSUME (worker riêng)
+                 PRODUCE (Tomcat request thread)                      CONSUME (dedicated worker)
         ┌──────────────────────────────────────┐         ┌──────────────────────────────────────┐
  handleFastApiCallback (EXTRACTED)            │         │  StreamMessageListenerContainer       │
    XADD stream:moderation * document_id <id>  │ ──────► │  consumer-group: moderation-cg        │
-   return NGAY (không block, không @Async)    │         │  poll BLOCK 2s, batchSize 1          │
+   return IMMEDIATELY (no block, no @Async)   │         │  poll BLOCK 2s, batchSize 1           │
         └──────────────────────────────────────┘         │  autoAcknowledge = false             │
                                                           │       │                              │
                               Redis (persistent log)       │       ▼ onMessage(record)           │
                         ┌─────────────────────────────┐    │  ModerationStreamListener           │
                         │  stream:moderation          │◄───┤   → AutoModerationService.process() │
-                        │  + PEL (msg chưa ACK)       │    │   → XACK  (thành công)              │
-                        │  + stream:moderation:dlq    │    │   → KHÔNG ack (lỗi → redeliver)     │
+                        │  + PEL (un-ACKed msgs)      │    │   → XACK  (success)                 │
+                        │  + stream:moderation:dlq    │    │   → do NOT ack (error → redeliver)  │
                         └─────────────────────────────┘    └──────────────────────────────────────┘
 ```
 
-| Thành phần | Ý nghĩa |
+| Component | Meaning |
 |---|---|
-| **Stream** `stream:moderation` | Log append-only, persistent trong Redis. Mỗi message = `{document_id}`. |
-| **Consumer group** `moderation-cg` | Đảm bảo 1 message chỉ do **1 consumer** trong nhóm xử lý; Redis tự chia đều cho các instance. |
-| **PEL** (Pending Entries List) | Message đã `XREADGROUP` nhưng chưa `XACK` → **sống sót qua crash/restart**. |
-| **DLQ** `stream:moderation:dlq` | Message thất bại N lần → dời sang đây + ACK bản gốc, để admin inspect. |
-| `XACK` | Báo "đã xử lý xong" → message rời PEL. **Không ACK = xin redeliver.** |
+| **Stream** `stream:moderation` | Append-only, persistent log in Redis. Each message = `{document_id}`. |
+| **Consumer group** `moderation-cg` | Ensures 1 message is handled by only **1 consumer** in the group; Redis distributes evenly across instances. |
+| **PEL** (Pending Entries List) | Messages already `XREADGROUP` but not yet `XACK` → **survive crash/restart**. |
+| **DLQ** `stream:moderation:dlq` | Messages that fail N times → moved here + the original ACKed, for admin inspection. |
+| `XACK` | Signals "done processing" → message leaves the PEL. **Not ACKing = requesting a redeliver.** |
 
-## 2. Sơ đồ luồng mới
+## 2. New flow diagram
 
 ```mermaid
 flowchart TD
-    RAG["RAG /extract xong"] -->|"POST /callback EXTRACTED"| CB["handleFastApiCallback (T1)"]
-    UPD2["updateDocument<br/>PRIVATE→PUBLIC (T2)"] --> DB2[("documents PENDING<br/>chunks đã embedded")]
+    RAG["RAG /extract done"] -->|"POST /callback EXTRACTED"| CB["handleFastApiCallback (T1)"]
+    UPD2["updateDocument<br/>PRIVATE→PUBLIC (T2)"] --> DB2[("documents PENDING<br/>chunks embedded")]
     CB --> DB[("documents: status PENDING")]
     CB -->|"XADD stream:moderation<br/>{document_id}"| STR[("Redis stream:moderation<br/>+ group moderation-cg + PEL")]
     UPD2 -->|"triggerModeration → XADD<br/>{document_id}"| STR
-    STR -. "crash/restart: PEL giữ msg<br/>→ XAUTOCLAIM lấy lại" .-> STR
+    STR -. "crash/restart: PEL keeps msg<br/>→ XAUTOCLAIM reclaims it" .-> STR
 
     STR -->|"XREADGROUP ... autoAck=false"| L["ModerationStreamListener.onMessage"]
-    L --> PROC["AutoModerationService.process(id)<br/>(ĐỒNG BỘ — bóc @Async)"]
+    L --> PROC["AutoModerationService.process(id)<br/>(SYNCHRONOUS — extracted @Async)"]
     PROC --> CHK{"status==PENDING?<br/>key? chunk?"}
-    CHK -->|không| ACK["XACK (bỏ qua an toàn)"]
-    CHK -->|có| OAI["OpenAI Moderation ≤30/batch"]
+    CHK -->|no| ACK["XACK (safe skip)"]
+    CHK -->|yes| OAI["OpenAI Moderation ≤30/batch"]
     OAI --> T{maxScore}
     T -->|"≥0.80"| REJ["rejectDocument → XACK"]
     T -->|"<0.40"| APR["approveDocument → XACK"]
-    T -->|"0.40–0.80"| ACKP(["giữ PENDING → XACK<br/>(xử lý xong, không phải lỗi)"])
-    PROC -. "exception → KHÔNG ack" .-> PEL2["ở lại PEL → redeliver + backoff"]
-    PEL2 -. "sau N lần (delivery-count)" .-> DLQ[("stream:moderation:dlq<br/>+ XACK gốc")]
+    T -->|"0.40–0.80"| ACKP(["keep PENDING → XACK<br/>(done, not an error)"])
+    PROC -. "exception → do NOT ack" .-> PEL2["stays in PEL → redeliver + backoff"]
+    PEL2 -. "after N times (delivery-count)" .-> DLQ[("stream:moderation:dlq<br/>+ original XACK")]
 ```
 
-## 3. Produce — đổi ở 2 call site
+## 3. Produce — change at 2 call sites
 
-Có **2 nơi** đang gọi `moderateDocumentAsync` (T1 `handleFastApiCallback` EXTRACTED, T2 `updateDocument` PRIVATE→PUBLIC). Cả hai đều đổi thành append vào stream:
+There are **2 places** currently calling `moderateDocumentAsync` (T1 `handleFastApiCallback` EXTRACTED, T2 `updateDocument` PRIVATE→PUBLIC). Both change to append to the stream:
 
 ```java
-// TRƯỚC (cả T1 và T2):
+// BEFORE (both T1 and T2):
 autoModerationService.moderateDocumentAsync(documentId);
 
-// SAU: append vào stream, return gần như tức thì (Redis ~<1ms). Không block request thread.
+// AFTER: append to the stream, return almost instantly (Redis ~<1ms). Does not block the request thread.
 moderationStreamProducer.enqueue(documentId);
 ```
 
-> T1 nằm trong callback của RAG (request thread xử lý `/callback`); T2 nằm trong `updateDocument`
-> (request thread xử lý `PUT /documents/{id}`). Cả hai đều chỉ cần `enqueue(documentId)` rồi trả về.
+> T1 is inside the RAG callback (request thread handling `/callback`); T2 is inside `updateDocument`
+> (request thread handling `PUT /documents/{id}`). Both only need `enqueue(documentId)` then return.
 
-`ModerationStreamProducer` (class mới, mỏng):
+`ModerationStreamProducer` (new, thin class):
 
 ```java
 @Component
@@ -82,49 +82,49 @@ public class ModerationStreamProducer {
 
     public RecordId enqueue(UUID documentId) {
         return redis.opsForStream().add(streamKey,
-                Map.of("document_id", documentId.toString()));   // id tự sinh (XADD *)
+                Map.of("document_id", documentId.toString()));   // id auto-generated (XADD *)
     }
 }
 ```
 
-> Lý do gói ra một producer bean: tách biệt Redis khỏi `DocumentServiceImpl`, dễ mock khi test callback
-> (giống cách `DocumentRagClient`/`UploadProvider` được abstract ra hiện nay).
+> Reason for wrapping it in a producer bean: decouple Redis from `DocumentServiceImpl`, easy to mock when testing
+> the callback (same way `DocumentRagClient`/`UploadProvider` are abstracted out today).
 
-## 4. Bóc logic ra method đồng bộ (`process`)
+## 4. Extract logic into a synchronous method (`process`)
 
-Logic triage trong `AutoModerationServiceImpl.moderateDocumentAsync` **giữ nguyên 100%**, chỉ:
+The triage logic in `AutoModerationServiceImpl.moderateDocumentAsync` is **kept 100% unchanged**, only:
 
-- Thêm method **đồng bộ** `void process(UUID documentId)` chứa đúng phần thân cũ (load doc → chunks → OpenAI → triage).
-- Giữ `moderateDocumentAsync` (nếu vẫn cần ad-hoc, ví dụ test) hoặc xoá hẳn. **Listener sẽ gọi `process()`**, KHÔNG qua `@Async` (vì concurrency giờ do consumer group quản).
+- Add a **synchronous** method `void process(UUID documentId)` containing exactly the old body (load doc → chunks → OpenAI → triage).
+- Keep `moderateDocumentAsync` (if still needed ad-hoc, e.g. tests) or delete it entirely. **The listener will call `process()`**, NOT via `@Async` (because concurrency is now managed by the consumer group).
 
 ```java
 // AutoModerationServiceImpl
 @Override
-public void process(UUID documentId) {            // ← đồng bộ, KHÔNG @Async
+public void process(UUID documentId) {            // ← synchronous, NOT @Async
     log.info("Moderating document {} (stream consumer)", documentId);
-    // ... phần thân y hệt moderateDocumentAsync cũ ...
-    //   - bỏ qua nếu status != PENDING          (idempotency-guard)
-    //   - bỏ qua nếu key rỗng/mock hoặc không chunk
-    //   - OpenAI batch ≤30, triage 3 vùng
-    //   - catch(Exception): NÉM ra (để listener bắt → KHÔNG ack → redeliver)
-    //                       thay vì nuốt như cũ
+    // ... body identical to the old moderateDocumentAsync ...
+    //   - skip if status != PENDING          (idempotency-guard)
+    //   - skip if key is empty/mock or no chunk
+    //   - OpenAI batch ≤30, triage 3 zones
+    //   - catch(Exception): THROW it (so the listener catches → does NOT ack → redeliver)
+    //                       instead of swallowing as before
 }
 ```
 
-> **Thay đổi ngữ nghĩa duy nhất**: `catch(Exception)` cũ **nuốt** lỗi (giữ PENDING lặng thinh).
-> Bản mới **ném** để listener KHÔNG ack → message redeliver (có retry/DLQ). Đây chính là điểm sửa gap G2.
+> **The only semantic change**: the old `catch(Exception)` **swallowed** the error (kept PENDING silently).
+> The new version **throws** so the listener does NOT ack → the message is redelivered (with retry/DLQ). This is exactly the fix for gap G2.
 
 ## 5. Consume — `StreamMessageListenerContainer`
 
-Spring Data Redis 4.0.5 đã có sẵn (`StreamMessageListenerContainer` implements `SmartLifecycle` → tự `start()`).
-**Verify thực tế** trong jar `spring-data-redis-4.0.5.jar`:
+Spring Data Redis 4.0.5 already provides it (`StreamMessageListenerContainer` implements `SmartLifecycle` → auto `start()`).
+**Verified** in the jar `spring-data-redis-4.0.5.jar`:
 
 - `StreamMessageListenerContainer.create(RedisConnectionFactory, options)`
 - options: `.pollTimeout(Duration) / .batchSize(int) / .executor(Executor) / .errorHandler(...)`
 - `StreamReadRequest.builder(StreamOffset.create(key, ReadOffset.lastConsumed())).consumer(Consumer.from(group, name)).autoAcknowledge(false).build()`
 - `container.register(readRequest, listener)` → `Subscription`
 
-`config/ModerationStreamConfig.java` (mới):
+`config/ModerationStreamConfig.java` (new):
 
 ```java
 @Configuration
@@ -149,15 +149,15 @@ public class ModerationStreamConfig {
         var container = StreamMessageListenerContainer.create(cf, options);
 
         var req = StreamMessageListenerContainer.StreamReadRequest
-                .builder(StreamOffset.create(streamKey, ReadOffset.lastConsumed()))   // ">" = chỉ msg mới
+                .builder(StreamOffset.create(streamKey, ReadOffset.lastConsumed()))   // ">" = new messages only
                 .consumer(Consumer.from(group, consumer))
-                .autoAcknowledge(false)                                               // ACK thủ công
+                .autoAcknowledge(false)                                               // manual ACK
                 .build();
         container.register(req, listener);
-        return container;   // SmartLifecycle: Spring tự start/stop theo context
+        return container;   // SmartLifecycle: Spring auto start/stop with the context
     }
 
-    // Tạo group lúc startup (MKSTREAM nếu stream chưa tồn tại). BUSYGROUP = đã có → bỏ qua.
+    // Create the group at startup (MKSTREAM if the stream does not exist yet). BUSYGROUP = already exists → skip.
     @Bean
     public ApplicationRunner initModerationGroup(StringRedisTemplate redis) {
         return args -> {
@@ -171,10 +171,10 @@ public class ModerationStreamConfig {
 }
 ```
 
-> `consumer-name` cần **khác nhau per instance** (vd lấy từ env `HOSTNAME`/`POD_NAME`) để nhiều instance cùng
-> tham gia group mà Redis phân biệt được consumer cho PEL reclaim.
+> `consumer-name` must be **unique per instance** (e.g. from env `HOSTNAME`/`POD_NAME`) so multiple instances can
+> join the same group and Redis can distinguish consumers for PEL reclaim.
 
-Listener (mới):
+Listener (new):
 
 ```java
 @Component
@@ -183,7 +183,7 @@ Listener (mới):
 public class ModerationStreamListener
         implements StreamListener<String, MapRecord<String, String, String>> {
 
-    private final AutoModerationService moderation;     // gọi process()
+    private final AutoModerationService moderation;     // calls process()
     private final StringRedisTemplate redis;
     private final ModerationDlqHandler dlqHandler;
 
@@ -195,16 +195,16 @@ public class ModerationStreamListener
     public void onMessage(MapRecord<String, String, String> record) {
         UUID documentId = UUID.fromString(record.getValue().get("document_id"));
         try {
-            moderation.process(documentId);                          // thành công
+            moderation.process(documentId);                          // success
             redis.opsForStream().ack(streamKey, group, record.getId());
         } catch (Exception e) {
             log.error("moderation failed for {}, attempts check", documentId, e);
-            // delivery-count > maxAttempts → dời DLQ + ACK; ngược lại KHÔNG ack → redeliver
+            // delivery-count > maxAttempts → move to DLQ + ACK; otherwise do NOT ack → redeliver
             if (dlqHandler.shouldDeadLetter(streamKey, group, record.getId(), maxAttempts)) {
                 dlqHandler.moveToDlq(streamKey, record);
                 redis.opsForStream().ack(streamKey, group, record.getId());
             }
-            // không ack → message ở lại PEL, container hoặc scheduler sẽ redeliver
+            // no ack → message stays in PEL, the container or a scheduler will redeliver
         }
     }
 }
@@ -212,45 +212,45 @@ public class ModerationStreamListener
 
 ## 6. Crash recovery — PEL + reclaim
 
-- Container dùng `ReadOffset.lastConsumed()` (`>`) chỉ đọc **message mới** của group.
-- Message đã đọc nhưng **chưa ACK** nằm trong **PEL** → sống qua restart của Redis (AOF/RDB) và qua restart app.
-- Khi app lên lại, các msg treo trong PEL **của consumer đã chết** cần được claim lại. Hai cách (chọn 1):
+- The container uses `ReadOffset.lastConsumed()` (`>`) to read only **new messages** of the group.
+- Messages already read but **not yet ACKed** live in the **PEL** → they survive a Redis restart (AOF/RDB) and an app restart.
+- When the app comes back up, messages stuck in the PEL **of a dead consumer** must be reclaimed. Two options (pick one):
 
-| Cách | Mô tả |
+| Option | Description |
 |---|---|
-| **A. Reclaim chủ động (khuyến nghị)** | Một `@Scheduled` định kỳ gọi `XAUTOCLAIM`/`XCLAIM` cho các msg idle quá `minIdleTime` → gán cho consumer đang sống. Spring Data Redis: `opsForStream().pending(...)` (lấy delivery-count) + `opsForStream().claim(key, group, consumer, minIdle, ids)`. |
-| **B. Read `0` lần đầu** | Đăng ký thêm 1 subscription với `ReadOffset.from("0")` để consumer mới "tiếp" hết PENDING của chính nó rồi mới đọc `>`. Đơn giản hơn nhưng ít linh hoạt. |
+| **A. Proactive reclaim (recommended)** | A `@Scheduled` task periodically calls `XAUTOCLAIM`/`XCLAIM` for messages idle longer than `minIdleTime` → assigns them to a live consumer. Spring Data Redis: `opsForStream().pending(...)` (get delivery-count) + `opsForStream().claim(key, group, consumer, minIdle, ids)`. |
+| **B. Read `0` on first run** | Register an extra subscription with `ReadOffset.from("0")` so a new consumer first "takes over" all of its own PENDING before reading `>`. Simpler but less flexible. |
 
-> Đây là phần **cần thiết kế kỹ nhất** (xác định `minIdleTime`, tránh claim trùng đang xử lý). Có thể ở bản
-> đầu tiên chỉ làm cách B cho gọn, nâng cấp lên A khi cần multi-instance thật sự.
+> This is the part that **needs the most careful design** (determine `minIdleTime`, avoid claiming a message that is currently being processed). In the first
+> version you may just do option B for simplicity, and upgrade to A when real multi-instance is needed.
 
 ## 7. Retry / DLQ
 
-- `XPENDING` cho biết **delivery-count** (số lần đã redeliver) của mỗi msg trong PEL.
+- `XPENDING` reports the **delivery-count** (number of times redelivered) of each message in the PEL.
   Spring Data Redis: `opsForStream().pending(key, group, Range.unbounded(), count)` → `PendingMessage.getTotalDeliveryCount()`.
-- Quá `app.moderation.max-attempts` (vd 5) → `XADD stream:moderation:dlq` (kèm `document_id`, lỗi, id gốc) + `XACK` bản gốc.
-- Poison message (vd document bị xoá giữa chừng → `process()` ném) sẽ không kẹt vô hạn trong PEL.
-- `rejectDocument`/`approveDocument` đã guard `status == PENDING` → redeliver an toàn (xem §8).
+- Over `app.moderation.max-attempts` (e.g. 5) → `XADD stream:moderation:dlq` (with `document_id`, the error, the original id) + `XACK` the original.
+- Poison messages (e.g. document deleted mid-flight → `process()` throws) will not get stuck forever in the PEL.
+- `rejectDocument`/`approveDocument` already guard `status == PENDING` → safe redeliver (see §8).
 
-## 8. Idempotency (điều kiện tiên quyết — ĐÃ THỎA)
+## 8. Idempotency (prerequisite — ALREADY MET)
 
-At-least-once ⇒ cùng `document_id` có thể nhận ≥1 lần. Phải an toàn khi chạy lại:
+At-least-once ⇒ the same `document_id` may be received ≥1 time. Re-runs must be safe:
 
-- `process()` **bỏ qua nếu `status != PENDING`** (đã có sẵn) → nếu message redeliver sau khi doc đã `APPROVED`/`REJECTED`/`COMPLETED` → no-op → ACK. ✅
-- Triage thuần hàm trên chunks hiện tại → cùng input → cùng kết luận. ✅
-- `approveDocument`/`rejectDocument` đều guard trạng thái (`approve`: chỉ `PENDING`→`PROCESSING`; `reject`: chỉ `PENDING`→`REJECTED`) → gọi lại khi đã chuyển trạng thái sẽ ném `AppException` → bắt ở listener → DLQ (đúng hành vi). ✅
+- `process()` **skips if `status != PENDING`** (already present) → if a message is redelivered after the doc is already `APPROVED`/`REJECTED`/`COMPLETED` → no-op → ACK. ✅
+- Triage is a pure function over the current chunks → same input → same conclusion. ✅
+- `approveDocument`/`rejectDocument` both guard the state (`approve`: only `PENDING`→`PROCESSING`; `reject`: only `PENDING`→`REJECTED`) → calling again after the state has changed throws `AppException` → caught in the listener → DLQ (correct behavior). ✅
 
-> Không cần idempotency key ngoài như `stream:doc-ops` (vì `/process`,`/extract` của RAG mới cần key).
-> Moderation idempotent sẵn — lý do đây là luồng "làm thử trước".
+> No external idempotency key is needed like `stream:doc-ops` (because RAG's `/process`,`/extract` newly need a key).
+> Moderation is already idempotent — the reason this is the "try it first" flow.
 
-## 9. Config thêm (`application.yaml`)
+## 9. Additional config (`application.yaml`)
 
 ```yaml
 app:
   moderation:
     stream-key: stream:moderation
     group: moderation-cg
-    consumer-name: ${HOSTNAME:api-1}     # khác nhau per instance
+    consumer-name: ${HOSTNAME:api-1}     # unique per instance
     poll-timeout-seconds: 2
     batch-size: 1
     max-attempts: 5
@@ -258,59 +258,60 @@ app:
     reclaim:
       enabled: true
       fixed-delay-ms: 60000
-      min-idle-ms: 300000                # msg idle > 5p mới claim
+      min-idle-ms: 300000                # claim only if msg idle > 5min
 ```
 
-Không thêm secret; dùng chung Redis connection hiện có (`spring.data.redis.*`). Không thêm dependency
-(Spring Data Redis đã có toàn bộ API Streams).
+No new secrets; reuse the existing Redis connection (`spring.data.redis.*`). No new dependencies
+(Spring Data Redis already has the full Streams API).
 
-## 10. Kế hoạch triển khai (step-by-step)
+## 10. Implementation plan (step-by-step)
 
-| Bước | File | Việc |
+| Step | File | Task |
 |---|---|---|
-| 1 | `service/AutoModerationService.java` | thêm `void process(UUID)`; (tuỳ chọn) giữ/xoá `moderateDocumentAsync`. |
-| 2 | `service/impl/AutoModerationServiceImpl.java` | tách thân `moderateDocumentAsync` thành `process()` đồng bộ; **`catch` ném thay vì nuốt**. |
-| 3 | `service/impl/ModerationStreamProducer.java` | **mới** — `enqueue(UUID)` gọi `opsForStream().add`. |
-| 4 | `service/impl/ModerationStreamListener.java` | **mới** — `StreamListener`, gọi `process()` + `ack`/DLQ. |
-| 5 | `service/impl/ModerationDlqHandler.java` | **mới** — đếm delivery-count, move DLQ. |
-| 6 | `config/ModerationStreamConfig.java` | **mới** — `StreamMessageListenerContainer` + `createGroup` runner. |
-| 7 | `service/impl/DocumentServiceImpl.java` | **2 call site**: nhánh `EXTRACTED` (`handleFastApiCallback`) VÀ nhánh PRIVATE→PUBLIC (`updateDocument`) — cả hai đổi `moderateDocumentAsync(id)` → `moderationStreamProducer.enqueue(id)`. |
-| 8 | `application.yaml` | thêm `app.moderation.*`. |
-| 9 | Test | xem §11. |
+| 1 | `service/AutoModerationService.java` | add `void process(UUID)`; (optional) keep/delete `moderateDocumentAsync`. |
+| 2 | `service/impl/AutoModerationServiceImpl.java` | split the body of `moderateDocumentAsync` into a synchronous `process()`; **`catch` throws instead of swallowing**. |
+| 3 | `service/impl/ModerationStreamProducer.java` | **new** — `enqueue(UUID)` calls `opsForStream().add`. |
+| 4 | `service/impl/ModerationStreamListener.java` | **new** — `StreamListener`, calls `process()` + `ack`/DLQ. |
+| 5 | `service/impl/ModerationDlqHandler.java` | **new** — counts delivery-count, moves to DLQ. |
+| 6 | `config/ModerationStreamConfig.java` | **new** — `StreamMessageListenerContainer` + `createGroup` runner. |
+| 7 | `service/impl/DocumentServiceImpl.java` | **2 call sites**: the `EXTRACTED` branch (`handleFastApiCallback`) AND the PRIVATE→PUBLIC branch (`updateDocument`) — both change `moderateDocumentAsync(id)` → `moderationStreamProducer.enqueue(id)`. |
+| 8 | `application.yaml` | add `app.moderation.*`. |
+| 9 | Test | see §11. |
 
-> `@Async` trên moderation **bỏ** (concurrency do consumer group lo). `taskExecutor` **vẫn giữ** cho các
-> `@Async` khác (document processing, notifications) — không động tới.
+> The `@Async` on moderation is **removed** (concurrency is handled by the consumer group). `taskExecutor` is **kept** for other
+> `@Async` methods (document processing, notifications) — left untouched.
 
 ## 11. Testing
 
-Bám phong cách hiện tại (pure Mockito, không Spring context):
+Follow the current style (pure Mockito, no Spring context):
 
-- `AutoModerationServiceImplTest` (đã có): cập nhật assert `process()` **ném** exception khi OpenAI lỗi
-  (thay vì nuốt) + verify `approveDocument`/`rejectDocument` theo 3 vùng.
-- `ModerationStreamListenerTest` (**mới**): mock `AutoModerationService` + `StringRedisTemplate`:
-  - `process` thành công → verify `opsForStream().ack(...)` được gọi đúng `(key, group, recordId)`.
-  - `process` ném, delivery-count < max → **không** ack, **không** move DLQ.
-  - `process` ném, delivery-count ≥ max → verify move DLQ + ack.
-- `ModerationStreamProducerTest` (**mới**): verify `opsForStream().add(key, {document_id})`.
-- Container/group-creation: **không** unit-test được (cần Redis thật + Spring context) — ghi nhận là
-  khoảng trống, cùng kiểu với `@Cacheable` đã có (proxy/infra chỉ verify khi chạy thật).
+- `AutoModerationServiceImplTest` (already exists): update to assert `process()` **throws** an exception on OpenAI error
+  (instead of swallowing) + verify `approveDocument`/`rejectDocument` across the 3 zones.
+- `ModerationStreamListenerTest` (**new**): mock `AutoModerationService` + `StringRedisTemplate`:
+  - `process` succeeds → verify `opsForStream().ack(...)` is called with the correct `(key, group, recordId)`.
+  - `process` throws, delivery-count < max → **no** ack, **no** move to DLQ.
+  - `process` throws, delivery-count ≥ max → verify move to DLQ + ack.
+- `ModerationStreamProducerTest` (**new**): verify `opsForStream().add(key, {document_id})`.
+- Container/group-creation: **cannot** be unit-tested (needs real Redis + Spring context) — acknowledged as
+  a gap, same kind as the existing `@Cacheable` (proxy/infra only verified when running for real).
 
-> Khi muốn smoke-test thật: `docker compose up -d redis`, chạy app, upload 1 doc public, quan sát
-> `redis-cli XLEN stream:moderation` = 0 sau khi consumer xử lý + `XACK`, và `XPENDING stream:moderation moderation-cg`.
+> When you want a real smoke test: `docker compose up -d redis`, run the app, upload 1 public doc, observe
+> `redis-cli XLEN stream:moderation` = 0 after the consumer processes + `XACK`, and `XPENDING stream:moderation moderation-cg`.
 
-## 12. Đánh đổi / rủi ro
+## 12. Trade-offs / risks
 
-| Rủi ro | Giải pháp |
+| Risk | Mitigation |
 |---|---|
-| Phức tạp vận hành tăng (PEL, reclaim, DLQ, consumer-name per pod). | Bắt đầu với cách B (read `0`) đơn giản; nâng A khi cần multi-instance. Monitor `XLEN` PEL. |
-| `consumer-name` trùng giữa pod → PEL claim lẫn nhau. | Bắt buộc dùng `HOSTNAME`/`POD_NAME`; fail-fast nếu rỗng ở prod. |
-| Message redeliver khi đang xử lý (claim quá sớm). | Đặt `min-idle-ms` lớn hơn thời gian moderation tối đa (OpenAI chậm). |
-| OpenAI chậm/đứt → PEL phình (msg treo không ack). | Alert trên `XPENDING` count; `max-attempts` + DLQ giới hạn. |
-| Order không bảo toàn chặt giữa nhiều consumer. | Không sao — mỗi doc độc lập, không phụ thuộc thứ tự. |
+| Operational complexity increases (PEL, reclaim, DLQ, consumer-name per pod). | Start with option B (read `0`) for simplicity; upgrade to A when multi-instance is needed. Monitor the PEL `XLEN`. |
+| Duplicate `consumer-name` across pods → they reclaim each other's PEL. | Must use `HOSTNAME`/`POD_NAME`; fail-fast if empty in prod. |
+| Message redelivered while still being processed (claimed too early). | Set `min-idle-ms` larger than the max moderation time (OpenAI is slow). |
+| OpenAI slow/down → PEL grows (messages stuck without ack). | Alert on `XPENDING` count; `max-attempts` + DLQ bound it. |
+| Order not strictly preserved across multiple consumers. | Fine — each doc is independent, order does not matter. |
 
-## 13. Khi nào KHÔNG nên làm
+## 13. When NOT to do this
 
-- **Single-instance**, tải thấp, OpenAI ổn định → `@Async` đã đủ; Streams là over-engineering.
-- Nếu chưa có nhu cầu durability/scale ngang → độ phức tạp vận hành không xứng đáng.
-> Đây là bản "làm thử" để nắm Streams; sau khi ổn, áp dụng cùng pattern cho `stream:doc-ops` (pipeline RAG) —
-> nơi gap (crash → doc kẹt PROCESSING/PENDING vĩnh viễn) nặng hơn, nhưng cần idempotency key ở phía RAG.
+- **Single-instance**, low load, OpenAI stable → `@Async` is enough; Streams is over-engineering.
+- If there is no need for durability/horizontal scaling yet → the operational complexity is not worth it.
+
+> This is a "trial" version to get familiar with Streams; once stable, apply the same pattern to `stream:doc-ops` (RAG pipeline) —
+> where the gap (crash → doc stuck in PROCESSING/PENDING forever) is worse, but an idempotency key is needed on the RAG side.

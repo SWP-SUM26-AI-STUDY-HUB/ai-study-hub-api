@@ -40,6 +40,11 @@ public class ChatMessageEntity implements Persistable<UUID> {
     @Column(name = "citations", columnDefinition = "jsonb")
     private String citations;
 
+    /** JSONB payload for study-material (quiz/flashcard) bot messages: {@code {"type":"QUIZ"|"FLASHCARD","items":[...]}}. Null for regular chat messages. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "material_payload", columnDefinition = "jsonb")
+    private String materialPayload;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 

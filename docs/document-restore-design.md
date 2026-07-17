@@ -1,176 +1,175 @@
-# Khôi phục tài liệu (Document Restore) — Phân tích & Kế hoạch triển khai
+# Document Restore — Analysis & Implementation Plan
 
-> Bối cảnh: hiện tại soft-delete tài liệu **đồng thời xoá luôn** dữ liệu RAG
-> (`document_chunks` trong DB + `parent_docs_store/` trên filesystem RAG + rebuild BM25).
-> Bài toán: muốn thêm tính năng **khôi phục** tài liệu đã xoá mềm thì triển khai thế nào?
+> Context: currently, soft-deleting a document **also deletes** the RAG data
+> (`document_chunks` in the DB + `parent_docs_store/` on the RAG filesystem + rebuild BM25).
+> Problem: how do we add a **restore** feature for soft-deleted documents?
 >
-> Tài liệu này phân tích trạng thái hiện tại, nêu các phương án kèm đánh đổi, khuyến nghị
-> một phương án, và đưa ra kế hoạch triển khai chi tiết (step-by-step). **Chưa viết code.**
+> This document analyzes the current state, presents options with trade-offs, recommends
+> one option, and gives a detailed step-by-step implementation plan. **No code is written yet.**
 
 ---
 
-## 1. Trạng thái hiện tại: soft-delete đang phá gì?
+## 1. Current state: what is soft-delete breaking?
 
-Có **hai đường** soft-delete, chạy cùng một trạng thái `DELETED` nhưng hành vi RAG khác nhau:
+There are **two paths** for soft-delete, both setting the same `DELETED` status but with different RAG behavior:
 
-### 1.1. Đường owner — `DocumentServiceImpl.deleteDocument` (`DocumentServiceImpl.java:459-502`)
+### 1.1. Owner path — `DocumentServiceImpl.deleteDocument` (`DocumentServiceImpl.java:459-502`)
 
 ```java
 document.setDeletedAt(now());
 document.setStatus(DELETED);
-// ... trừ storageUsed, có thể OVERLIMITSTORAGE -> ACTIVE ...
-document.setLinkShare(null);          // (a) token share bị huỷ vĩnh viễn
+// ... subtract storageUsed, may go OVERLIMITSTORAGE -> ACTIVE ...
+document.setLinkShare(null);          // (a) share token destroyed permanently
 documentRepository.save(document);
-deleteFastApiVectorsAsync(documentId); // (b) xoá sạch index RAG
+deleteFastApiVectorsAsync(documentId); // (b) wipe the RAG index
 ```
 
-`deleteFastApiVectorsAsync` (`:504-512`) gọi `DocumentRagClient.deleteVectors` →
-`DELETE {fastapi.base-url}/documents/{id}`. Bên RAG (`ingestion.py:229-243`) hàm
-`delete_document` làm **3 việc không thể hoàn tác**:
+`deleteFastApiVectorsAsync` (`:504-512`) calls `DocumentRagClient.deleteVectors` →
+`DELETE {fastapi.base-url}/documents/{id}`. On the RAG side (`ingestion.py:229-243`) the
+`delete_document` function does **3 irreversible things**:
 
-| Tài nguyên | Vị trí | Bị xoá? | Khôi phục được không? |
+| Resource | Location | Deleted? | Restorable? |
 |---|---|---|---|
-| `document_chunks` (text + `embedding vector(1536)` + metadata) | PostgreSQL (`aistudyhub`) | ✅ `DELETE FROM document_chunks WHERE document_id=%s` | Chỉ bằng cách re-chunk + **re-embed (tốn Gemini)** |
-| Parent docs (text gốc 1000/200) | filesystem RAG container: `parent_docs_store/` (mounted volume) | ✅ `store.mdelete(parent_ids)` | Chỉ bằng cách tải lại S3 + re-chunk |
-| BM25 retriever (in-memory + nguồn từ `parent_docs_store`) | RAM RAG | ✅ rebuild `update_bm25()` | Tự heal khi re-index |
-| `link_share` token | cột `documents.link_share` | ✅ set `NULL` | Mất giá trị cũ → phải **sinh token mới** |
-| `documents` row (title, summary, fileUrl, tags, status…) | PostgreSQL | ❌ chỉ đổi status thành `DELETED` | Giữ nguyên — khôi phục được |
-| File gốc S3 (`fileUrl` + preview) | AWS S3 | ❌ chỉ xoá ở **hard-delete** (sau `retention-days` = 30 ngày) | Giữ nguyên |
-| `document_tags`, `reviews`, `reports`, `saved_documents` | PostgreSQL | ❌ (một số cascade ở hard-delete) | Giữ nguyên đến hard-delete |
-| `summary` | cột `documents.summary` | ❌ | Giữ nguyên |
+| `document_chunks` (text + `embedding vector(1536)` + metadata) | PostgreSQL (`aistudyhub`) | ✅ `DELETE FROM document_chunks WHERE document_id=%s` | Only by re-chunk + **re-embed (costs Gemini)** |
+| Parent docs (original text 1000/200) | RAG container filesystem: `parent_docs_store/` (mounted volume) | ✅ `store.mdelete(parent_ids)` | Only by re-downloading S3 + re-chunk |
+| BM25 retriever (in-memory + source from `parent_docs_store`) | RAG RAM | ✅ rebuild `update_bm25()` | Self-heals on re-index |
+| `link_share` token | `documents.link_share` column | ✅ set to `NULL` | Old value is gone → must **generate a new token** |
+| `documents` row (title, summary, fileUrl, tags, status…) | PostgreSQL | ❌ only status changes to `DELETED` | Kept as-is — restorable |
+| Original S3 file (`fileUrl` + preview) | AWS S3 | ❌ only deleted on **hard-delete** (after `retention-days` = 30 days) | Kept |
+| `document_tags`, `reviews`, `reports`, `saved_documents` | PostgreSQL | ❌ (some cascaded on hard-delete) | Kept until hard-delete |
+| `summary` | `documents.summary` column | ❌ | Kept |
 
-### 1.2. Đường admin (qua report) — `ReportServiceImpl.resolveReport` (`ReportServiceImpl.java:123-135`)
+### 1.2. Admin path (via report) — `ReportServiceImpl.resolveReport` (`ReportServiceImpl.java:123-135`)
 
 ```java
 document.setDeletedAt(now());
 document.setStatus(DELETED);
 document.setLinkShare(null);
-// ... trừ storageUsed ...
+// ... subtract storageUsed ...
 documentRepository.save(document);
-//  KHÔNG gọi deleteFastApiVectorsAsync  ← khác biệt với đường owner!
+//  Does NOT call deleteFastApiVectorsAsync  ← differs from the owner path!
 ```
 
-**Đây là một sự không nhất quán** đáng chú ý: admin xoá mềm thì **index RAG còn nguyên**
-(cho đến khi `DocumentPurgeScheduler` hard-delete sau 30 ngày). Nghĩa là RAG đang
-"nắm giữ" chunks zombie của doc admin-xoá trong suốt retention window — vẫn an toàn vì
-chat chỉ truyền `COMPLETED` doc_id (xem §2).
+**This is a notable inconsistency**: when an admin soft-deletes, the **RAG index stays intact**
+(until `DocumentPurgeScheduler` hard-deletes it after 30 days). That means RAG keeps
+"holding" zombie chunks for admin-deleted docs throughout the retention window — still safe
+because chat only passes `COMPLETED` doc_id (see §2).
 
-> Hệ quả: **khi muốn khôi phục, đường owner bị thiếu dữ liệu RAG, còn đường admin thì còn.**
-> Hai đường đang có ngữ nghĩa khác nhau trên cùng một trạng thái `DELETED`.
+> Consequence: **when restoring, the owner path lacks RAG data while the admin path still has it.**
+> The two paths have different semantics on the same `DELETED` status.
 
 ### 1.3. Hard-delete — `DocumentServiceImpl.hardDeleteDocument` (`:515-542`)
 
-Chạy bởi `DocumentPurgeScheduler` (cron 03:00 mỗi ngày) cho các doc `deletedAt < now() - retentionDays`:
-xoá file S3 (`fileUrl` + preview path), xoá `reviews`/`reports`/`session_documents`
-(những FK không có `ON DELETE CASCADE`), rồi `documentRepository.delete(doc)`.
-**`document_chunks` cascade ở DB** (`initdb.sql:200`: `ON DELETE CASCADE`).
-Hard-delete **không** gọi RAG `deleteVectors` — phần parent docs trên filesystem + BM25
-**không được dọn** (chỉ sạch nhờ DB cascade). Đây là một gap nhỏ hiện tại.
+Run by `DocumentPurgeScheduler` (cron 03:00 every day) for docs with `deletedAt < now() - retentionDays`:
+deletes the S3 file (`fileUrl` + preview path), deletes `reviews`/`reports`/`session_documents`
+(those FKs without `ON DELETE CASCADE`), then `documentRepository.delete(doc)`.
+**`document_chunks` cascades in the DB** (`initdb.sql:200`: `ON DELETE CASCADE`).
+Hard-delete **does not** call the RAG `deleteVectors` — the parent docs on the filesystem + BM25
+**are not cleaned** (only the DB cascade cleans up). This is a small gap today.
 
 ---
 
-## 2. Tại sao "restore" hiện tại đắt / khó?
+## 2. Why is "restore" currently expensive / hard?
 
-Nếu **giữ nguyên** eager-purge ở soft-delete và muốn restore:
+If we **keep** eager-purge on soft-delete and want to restore:
 
-1. Index RAG (chunks + embeddings + parent docs) **đã bị xoá** → phải **re-ingest**:
-   gọi lại `/process` (PRIVATE) hoặc `/extract` + `/index` (PUBLIC) → **re-chunk + 1 lượt
-   `embed_documents` Gemini 1536-dim** (tốn tiền + ~vài giây → phải `@Async`).
-2. Phải chạy lại **state machine** (PROCESSING/PENDING/COMPLETED) + (với PUBLIC) re-moderation.
-3. Có thể **fail** giữa chừng → cần retry/state-machine như luồng upload hiện tại.
-4. `summary` có thể regenerate hoặc dùng lại từ DB (đang còn trong row).
+1. The RAG index (chunks + embeddings + parent docs) **is already deleted** → must **re-ingest**:
+   call `/process` (PRIVATE) or `/extract` + `/index` (PUBLIC) again → **re-chunk + 1 round of
+   `embed_documents` Gemini 1536-dim** (costs money + ~a few seconds → must be `@Async`).
+2. Must re-run the **state machine** (PROCESSING/PENDING/COMPLETED) + (for PUBLIC) re-moderation.
+3. May **fail** midway → needs retry/state-machine like the current upload flow.
+4. `summary` may be regenerated or reused from DB (still in the row).
 
-→ Restore chậm, tốn tiền, nhiều failure mode. **Không nên.**
+→ Restore is slow, costs money, and has many failure modes. **Not recommended.**
 
-**Nhưng** leak-prevention hiện tại đã **an toàn cho việc giữ lại** chunks khi soft-delete:
+**But** the current leak-prevention is **already safe for keeping** chunks on soft-delete:
 
-- Lớp (1): RAG `similarity_search_by_vector` lọc `embedding IS NOT NULL`.
-- Lớp (2): API chỉ truyền `COMPLETED` doc_id cho chat (`ChatServiceImpl:246` chặn
-  `deletedAt != null || DELETED` → 404; chat không bao giờ truyền doc `DELETED`).
-- Search/trending/recommend đều lọc `d.deletedAt IS NULL`
+- Layer (1): RAG `similarity_search_by_vector` filters `embedding IS NOT NULL`.
+- Layer (2): The API only passes `COMPLETED` doc_id to chat (`ChatServiceImpl:246` blocks
+  `deletedAt != null || DELETED` → 404; chat never passes a `DELETED` doc).
+- Search/trending/recommend all filter `d.deletedAt IS NULL`
   (`DocumentRepository`, `TrendingDocumentRepository:22`, `findRecommendedDocumentIds`).
 
-→ Một doc `DELETED` dù còn nguyên chunks/embeddings trong store thì **cũng không bao giờ
-được surface**. Giống hệt model an toàn đang dùng cho doc `PENDING`/`REJECTED` (chunks
-NULL-embedding). **Đây là chìa khoá cho phương án khuyến nghị.**
+→ A `DELETED` doc, even with its full chunks/embeddings still in the store, is **never
+surfaced**. Exactly like the safe model currently used for `PENDING`/`REJECTED` docs
+(NULL-embedding chunks). **This is the key to the recommended option.**
 
 ---
 
-## 3. Các phương án
+## 3. Options
 
-### Phương án A — Lazy purge (dời xoá RAG về hard-delete) ✅ KHUYẾN NGHỊ
+### Option A — Lazy purge (move RAG deletion to hard-delete) ✅ RECOMMENDED
 
-**Ý tưởng**: soft-delete **không** xoá index RAG nữa — chỉ flip trạng thái DB + trừ storage.
-Index RAG chỉ bị xoá khi **hard-delete** (30 ngày sau). Restore lúc đó **trivial**: flip lại
-trạng thái + cộng lại storage + sinh share link mới. RAG không cần đụng tới.
+**Idea**: soft-delete **no longer** deletes the RAG index — it only flips the DB status and subtracts storage.
+The RAG index is only deleted on **hard-delete** (30 days later). Restore then becomes **trivial**:
+flip the status back, add storage back, generate a new share link. RAG does not need to be touched.
 
 ```
-            soft-delete (owner/admin)              hard-delete (sau 30 ngày)
+            soft-delete (owner/admin)              hard-delete (after 30 days)
    ┌─────────────────────────────────────┐         ┌─────────────────────────────────┐
    │ status DELETED, deletedAt = now()   │         │ RAG deleteVectors (chunks +     │
-   │ storageUsed -= fileSize             │   ...   │   parent docs + BM25)  ← DỜI LÊN │
+   │ storageUsed -= fileSize             │   ...   │   parent docs + BM25)  ← MOVED  │
    │ linkShare = null                    │ ──────► │ S3 delete (file + preview)      │
-   │ KHÔNG đụng RAG  ← thay đổi          │         │ DB row delete (cascade chunks)  │
+   │ DO NOT touch RAG  ← change          │         │ DB row delete (cascade chunks)  │
    └─────────────────────────────────────┘         └─────────────────────────────────┘
 ```
 
 | | |
 |---|---|
-| ✅ Restore **tức thì, miễn phí** (không re-embed, không Gemini spend) | |
-| ✅ Thống nhất ngữ nghĩa: "soft = có thể undo, hard = vĩnh viễn" | |
-| ✅ Khử sự không nhất quán owner-vs-admin (cả hai đều lazy) | |
-| ✅ Leak-prevention giữ nguyên (status-gate ở Java; xem §2) | |
-| ✅ S3 + DB row vẫn xoá đúng hạn 30 ngày | |
-| ⚠️ pgvector + `parent_docs_store/` mang theo **zombie chunks** trong retention window (≤30 ngày) | |
-| ⚠️ Phải **chú ý thứ tự** khi hard-delete: gọi RAG `deleteVectors` **trước** khi xoá row `documents` (RAG cần đọc `metadata->>'doc_id'` từ `document_chunks` để tìm `parent_ids`; nếu DB cascade xoá chunks trước, RAG không tìm được parent để dọn filesystem) | |
+| ✅ Restore is **instant and free** (no re-embed, no Gemini spend) | |
+| ✅ Unified semantics: "soft = undoable, hard = permanent" | |
+| ✅ Removes the owner-vs-admin inconsistency (both are lazy) | |
+| ✅ Leak-prevention unchanged (status-gate in Java; see §2) | |
+| ✅ S3 + DB row still deleted on the 30-day schedule | |
+| ⚠️ pgvector + `parent_docs_store/` carry **zombie chunks** during the retention window (≤30 days) | |
+| ⚠️ Must **mind the order** on hard-delete: call RAG `deleteVectors` **before** deleting the `documents` row (RAG needs to read `metadata->>'doc_id'` from `document_chunks` to find `parent_ids`; if the DB cascade deletes chunks first, RAG cannot find the parents to clean the filesystem) | |
 
-> Về chi phí "zombie": bị chặn bởi `app.document.retention-days` (mặc định 30). Re-embed
-> khi restore **còn đắt hơn** (Gemini API + latency). Mức trade-off này hợp lý cho một
-> nền tảng tài liệu học tập (khối lượng delete vừa). Nếu sau này delete quá nhiều, có thể
-> **giảm `retention-days`** hoặc chạy một job purge RAG-riêng sớm hơn (xem §8).
+> On the "zombie" cost: it is bounded by `app.document.retention-days` (default 30). Re-embedding
+> on restore **is even more expensive** (Gemini API + latency). This trade-off is reasonable for
+> a document-learning platform (moderate delete volume). If deletes grow too large later, you can
+> **lower `retention-days`** or run a separate early RAG purge job (see §8).
 
-### Phương án B — Giữ eager purge + re-index khi restore
+### Option B — Keep eager purge + re-index on restore
 
-Soft-delete giữ nguyên (xoá RAG ngay). Restore thì re-ingest qua `/process` hoặc
-`/extract`+`/index` (+ re-moderation nếu PUBLIC).
+Soft-delete stays the same (delete RAG immediately). On restore, re-ingest via `/process` or
+`/extract`+`/index` (+ re-moderation if PUBLIC).
 
-- ✅ pgvector luôn gọn (không zombie).
-- ❌ Restore **chậm + tốn tiền** (Gemini re-embed) và **có thể fail** → cần state-machine
-  giống upload. Trải nghiệm user kém (restore "đang xử lý…").
-- ❌ Summary regenerate hoặc giữ DB (lạc nhịp).
+- ✅ pgvector always stays compact (no zombies).
+- ❌ Restore is **slow + costly** (Gemini re-embed) and **may fail** → needs a state-machine
+  like upload. Poor user experience (restore "processing…").
+- ❌ Summary regeneration or DB reuse (out of sync).
 
-**Không chọn** — đổi công/đ latency + chi phí + độ phức tạp chỉ để tiết kiệm không gian
-vector trong 30 ngày.
+**Not chosen** — trading latency + cost + complexity only to save vector space for 30 days.
 
-### Phương án C — Tombstone trên chunks (đánh dấu ẩn)
+### Option C — Tombstone on chunks (mark as hidden)
 
-Giữ chunks, thêm cờ `hidden` vào metadata chunk, loại khỏi BM25/dense retrieval. Restore
-= bỏ cờ.
+Keep the chunks, add a `hidden` flag to chunk metadata, exclude them from BM25/dense retrieval.
+Restore = clear the flag.
 
-- ❌ Cần sửa `PostgresVectorStore` retrieval + BM25 + maintenance — **couples chặt** Java
-  với internals của RAG, vi phạm giới hạn "RAG own `document_chunks`".
-- ❌ Quá phức tạp cho bài toán. **Loại.**
+- ❌ Requires modifying `PostgresVectorStore` retrieval + BM25 + maintenance — **tightly couples** Java
+  with RAG internals, violating the "RAG owns `document_chunks`" boundary.
+- ❌ Overkill for this problem. **Rejected.**
 
 ---
 
-## 4. Thiết kế chi tiết (Phương án A)
+## 4. Detailed design (Option A)
 
-### 4.1. Thay đổi DB schema
+### 4.1. DB schema changes
 
-Thêm **hai cột nullable** vào `documents` (dùng `ddl-auto: update` → Hibernate tự thêm cột,
-không cần migration script; vẫn nên cập nhật `initdb.sql` để đồng bộ):
+Add **two nullable columns** to `documents` (using `ddl-auto: update` → Hibernate adds the columns
+automatically, no migration script needed; still update `initdb.sql` to keep them in sync):
 
 ```sql
 ALTER TABLE "documents" ADD COLUMN "status_before_deletion" document_status;
 ALTER TABLE "documents" ADD COLUMN "deleted_by_admin" boolean DEFAULT false;
 ```
 
-- `status_before_deletion`: lưu trạng thái **trước khi xoá** (`COMPLETED` / `PENDING` /
-  `PROCESSING`…). Khi restore, set `status` về lại đúng giá trị này (chứ không phải đoán).
-  Trạng thái `UPLOADING` thì không restore (chưa có file hợp lệ — coi như không tồn tại).
-- `deleted_by_admin`: phân biệt **owner xoá** vs **admin xoá vì vi phạm**. Mặc định chỉ
-  **owner được restore doc do owner xoá**; doc do admin xoá **không cho owner tự restore**
-  (tránh vô hiệu hoá quyết định admin) — nếu cần thì thêm endpoint admin-restore (xem §6.4).
+- `status_before_deletion`: stores the status **before deletion** (`COMPLETED` / `PENDING` /
+  `PROCESSING`…). On restore, set `status` back to exactly this value (rather than guessing).
+  A status of `UPLOADING` is not restorable (no valid file yet — treat as non-existent).
+- `deleted_by_admin`: distinguishes **owner-deleted** vs **admin-deleted for violation**. By default only
+  **the owner can restore an owner-deleted doc**; an admin-deleted doc **cannot be restored by the owner**
+  (to avoid overriding the admin decision) — if needed, add an admin-restore endpoint (see §6.4).
 
 Entity (`DocumentEntity`):
 
@@ -186,60 +185,60 @@ private DocumentStatus statusBeforeDeletion;
 private Boolean deletedByAdmin = false;
 ```
 
-> Tuân thủ convention enum hiện có (`@ColumnTransformer` UPPER/lower + native PG enum literal).
+> Follows the existing enum convention (`@ColumnTransformer` UPPER/lower + native PG enum literal).
 
-### 4.2. Soft-delete mới (cả hai đường)
+### 4.2. New soft-delete (both paths)
 
 ```java
-// DocumentServiceImpl.deleteDocument — bỏ deleteFastApiVectorsAsync(documentId)
+// DocumentServiceImpl.deleteDocument — remove deleteFastApiVectorsAsync(documentId)
 DocumentStatus originalStatus = document.getStatus();
-document.setStatusBeforeDeletion(originalStatus);   // ← lưu lại
-document.setDeletedByAdmin(false);                    // đường owner
+document.setStatusBeforeDeletion(originalStatus);   // ← save it
+document.setDeletedByAdmin(false);                    // owner path
 document.setDeletedAt(now());
 document.setStatus(DELETED);
 document.setLinkShare(null);
-// ... trừ storage (như cũ) ...
+// ... subtract storage (as before) ...
 documentRepository.save(document);
-// KHÔNG gọi deleteFastApiVectorsAsync  ← lazy purge
+// Do NOT call deleteFastApiVectorsAsync  ← lazy purge
 ```
 
 ```java
-// ReportServiceImpl.resolveReport — thêm 2 dòng set field (đã không gọi RAG từ trước)
+// ReportServiceImpl.resolveReport — add 2 lines to set the fields (already did not call RAG)
 document.setStatusBeforeDeletion(originalStatus);
-document.setDeletedByAdmin(true);                     // đường admin
-// (phần còn lại giữ nguyên)
+document.setDeletedByAdmin(true);                     // admin path
+// (rest unchanged)
 ```
 
-> Hai đường nay **thống nhất**: đều chỉ flip DB, không đụng RAG.
+> The two paths are now **unified**: both only flip the DB, neither touches RAG.
 
-### 4.3. Hard-delete mới — dời RAG purge lên đây + đúng thứ tự
+### 4.3. New hard-delete — move RAG purge here + correct order
 
 ```java
 // DocumentServiceImpl.hardDeleteDocument
 DocumentEntity document = ...;
 
-// (1) RAG TRƯỚC: cần document_chunks còn để đọc metadata.doc_id → tìm parent_ids
+// (1) RAG FIRST: needs document_chunks to still exist to read metadata.doc_id -> find parent_ids
 try {
-    ragClient.deleteVectors(documentId);   // xoá chunks + parent_docs_store + BM25
+    ragClient.deleteVectors(documentId);   // delete chunks + parent_docs_store + BM25
 } catch (Exception e) {
-    log.warn("RAG purge best-effort failed for {} (DB cascade sẽ dọn chunks): {}",
+    log.warn("RAG purge best-effort failed for {} (DB cascade will clean chunks): {}",
              documentId, e.getMessage());
 }
-// Lưu ý: parent_docs_store (filesystem) + BM25 KHÔNG do DB cascade dọn → cần bước này.
+// Note: parent_docs_store (filesystem) + BM25 are NOT cleaned by the DB cascade -> this step is needed.
 
 // (2) S3
 uploadProvider.delete(fileUrl);
 uploadProvider.delete(previewPath);
 
-// (3) DB dependents + row (document_chunks cascade theo document_id)
+// (3) DB dependents + row (document_chunks cascade by document_id)
 reviewRepository.deleteByDocumentId(documentId);
 reportRepository.deleteByDocumentId(documentId);
 documentRepository.deleteSessionDocumentsByDocumentId(documentId);
 documentRepository.delete(document);
 ```
 
-> Best-effort như cũ: nếu RAG lỗi, DB cascade vẫn xoá chunks; parent docs zombie trên
-> filesystem là rò rỉ nhỏ (có thể dọn bằng job quét `parent_docs_store` rời — §8).
+> Best-effort as before: if RAG fails, the DB cascade still deletes chunks; zombie parent docs on
+> the filesystem are a small leak (can be cleaned by a separate `parent_docs_store` sweep job — §8).
 
 ### 4.4. Restore flow — `POST /api/v1/documents/{documentId}/restore` (owner)
 
@@ -247,27 +246,27 @@ documentRepository.delete(document);
 flowchart TD
     REQ["POST /documents/{id}/restore (owner)"] --> LOAD[findByIdWithUploader]
     LOAD --> CHK1{"deletedAt != null<br/>|| status == DELETED?"}
-    CHK1 -->|không| ERR1["400/409: không ở trạng thái xoá"]
-    CHK1 -->|có| ADM{"deletedByAdmin == true?"}
-    ADM -->|có| ERR2["403: tài liệu do admin xoá, liên hệ admin"]
-    ADM -->|không| OWN{"owner == userId?"}
-    OWN -->|không| ERR3["403"]
-    OWN -->|có| SB{"statusBeforeDeletion<br/>== UPLOADING?"}
-    SB -->|có| ERR4["400: không thể khôi phục doc chưa upload xong"]
-    SB -->|không| QUOTA{"storageUsed + size<br/>> planLimit?"}
-    QUOTA -->|có| OVER["restore + set user<br/>OVERLIMITSTORAGE<br/>(vẫn đọc được, chặn upload)"]
-    QUOTA -->|không| OK["restore bình thường"]
+    CHK1 -->|no| ERR1["400/409: not in deleted state"]
+    CHK1 -->|yes| ADM{"deletedByAdmin == true?"}
+    ADM -->|yes| ERR2["403: document removed by admin, contact admin"]
+    ADM -->|no| OWN{"owner == userId?"}
+    OWN -->|no| ERR3["403"]
+    OWN -->|yes| SB{"statusBeforeDeletion<br/>== UPLOADING?"}
+    SB -->|yes| ERR4["400: cannot restore a doc that was not fully uploaded"]
+    SB -->|no| QUOTA{"storageUsed + size<br/>> planLimit?"}
+    QUOTA -->|yes| OVER["restore + set user<br/>OVERLIMITSTORAGE<br/>(still readable, blocks upload)"]
+    QUOTA -->|no| OK["normal restore"]
     OVER --> RESTORE
     OK --> RESTORE
-    RESTORE["status = statusBeforeDeletion<br/>deletedAt = null<br/>statusBeforeDeletion = null<br/>deletedByAdmin = false<br/>storageUsed += fileSize<br/>(linkShare: sinh token mới chỉ nếu PUBLIC+COMPLETED)"]
+    RESTORE["status = statusBeforeDeletion<br/>deletedAt = null<br/>statusBeforeDeletion = null<br/>deletedByAdmin = false<br/>storageUsed += fileSize<br/>(linkShare: generate a new token only if PUBLIC+COMPLETED)"]
     RESTORE --> CACHE["@CacheEvict trending allEntries"]
     RESTORE --> NOTIFY["Notification DOCUMENT_RESTORED -> owner"]
 ```
 
-Logic khoá:
+Key logic:
 
 ```java
-// DocumentServiceImpl.restoreDocument (MỚI)
+// DocumentServiceImpl.restoreDocument (NEW)
 @Transactional
 @CacheEvict(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS, allEntries = true)
 public void restoreDocument(UUID documentId, UUID userId) {
@@ -288,49 +287,49 @@ public void restoreDocument(UUID documentId, UUID userId) {
     if (pre == null || UPLOADING.equals(pre))
         throw new AppException(BAD_REQUEST, "Document cannot be restored");
 
-    // --- khôi phục trạng thái ---
+    // --- restore status ---
     doc.setStatus(pre);
     doc.setDeletedAt(null);
     doc.setStatusBeforeDeletion(null);
     doc.setDeletedByAdmin(false);
 
-    // --- khôi phục storage (đối xứng phần trừ ở delete) ---
+    // --- restore storage (symmetric with the subtraction on delete) ---
     UserEntity u = doc.getUploader();
     long used = u.getStorageUsed() + doc.getFileSizeBytes();
     u.setStorageUsed(used);
-    // nếu vượt plan -> OVERLIMITSTORAGE (mirror chiều ngược của delete)
+    // if over plan -> OVERLIMITSTORAGE (mirror the reverse side of delete)
     long limit = storagePlanRepository.findById(u.getPlanId() != null ? u.getPlanId() : 1)
             .map(StoragePlanEntity::getStorageLimit).orElse(0L);
     if (used > limit && ACTIVE.equals(u.getStatus())) {
-        u.setStatus(OVERLIMITSTORAGE);   // vẫn đọc được, chỉ chặn upload
+        u.setStatus(OVERLIMITSTORAGE);   // still readable, only blocks upload
     }
     userRepository.save(u);
 
-    // --- share link: sinh token mới (token cũ đã bị null) ---
+    // --- share link: generate a new token (old token was nulled) ---
     if (pre == COMPLETED && doc.getVisibility() == PUBLIC) {
-        doc.setLinkShare("doc-" + UUID.randomUUID());   // dùng lại format hiện tại
+        doc.setLinkShare("doc-" + UUID.randomUUID());   // reuse the current format
     }
     documentRepository.save(doc);
 
-    // --- thông báo ---
+    // --- notification ---
     notificationRepository.save(NotificationEntity.builder()
         .user(u).title("Document Restored")
         .content("Your document '" + doc.getTitle() + "' has been restored.")
         .type("DOCUMENT_RESTORED").targetId(doc.getId().toString()).isRead(false).build());
 
-    // RAG: KHÔNG cần đụng — index còn nguyên (lazy purge). Đó là toàn bộ điểm của Phương án A.
+    // RAG: NO need to touch — the index is intact (lazy purge). That is the whole point of Option A.
 }
 ```
 
-**Tại sao không cần gọi RAG khi restore**: vì soft-delete (mới) không xoá index, nên
-`document_chunks` + embeddings + parent docs + BM25 còn nguyên → doc về lại `COMPLETED` là
-chat/search/trending thấy lại ngay (cache trending bị evict để hiện ranking mới). Giống
-y hệt trạng thái trước khi xoá.
+**Why no RAG call on restore**: because the new soft-delete does not delete the index, so
+`document_chunks` + embeddings + parent docs + BM25 are still intact → the doc returns to `COMPLETED`
+and chat/search/trending see it again immediately (the trending cache is evicted to show the new ranking).
+Exactly the same state as before deletion.
 
 ### 4.5. API & controller
 
 ```java
-// DocumentController — chỉ thêm 1 endpoint, bám convention ApiResponse
+// DocumentController — just add 1 endpoint, follow the ApiResponse convention
 @PostMapping("/{documentId}/restore")
 @Operation(summary = "Restore a soft-deleted document")
 public ApiResponse<Void> restoreDocument(@PathVariable UUID documentId) {
@@ -341,143 +340,143 @@ public ApiResponse<Void> restoreDocument(@PathVariable UUID documentId) {
 }
 ```
 
-- Route: `/api/v1/documents/{documentId}/restore` → authenticated (path-based authz hiện có).
-- Không thêm method-level security (bám convention repo — authz thuần path).
-- `GET /api/v1/documents/trash` đã có sẵn (`getTrashDocuments`) — frontend list trash rồi
-  nút "Restore" gọi endpoint trên.
+- Route: `/api/v1/documents/{documentId}/restore` → authenticated (existing path-based authz).
+- No method-level security added (follows the repo convention — pure path authz).
+- `GET /api/v1/documents/trash` already exists (`getTrashDocuments`) — the frontend lists trash then
+  the "Restore" button calls the endpoint above.
 
-### 4.6. Ma trận trạng thái restore theo `statusBeforeDeletion`
+### 4.6. Restore behavior matrix by `statusBeforeDeletion`
 
-| `statusBeforeDeletion` | Restore hành vi | RAG? |
+| `statusBeforeDeletion` | Restore behavior | RAG? |
 |---|---|---|
-| `COMPLETED` (PRIVATE) | về `COMPLETED`, chat hoạt động lại ngay | còn nguyên — OK |
-| `COMPLETED` (PUBLIC) | về `COMPLETED`, sinh share link mới, lên lại trending | còn nguyên — OK |
-| `PENDING` (PUBLIC, chưa duyệt) | về `PENDING` (chờ admin duyệt). Có thể **tuỳ chọn** re-enqueue moderation | chunks NULL-embedding còn nguyên |
-| `PROCESSING` (đang xử lý khi bị xoá) | về `PROCESSING` rồi để callback RAG đẩy tiếp. **Edge case hiếm** — nên cân nhắc **chặn restore** (báo "tài liệu đang xử lý, thử lại sau") để tránh race | tuỳ |
-| `UPLOADING` / `FAILED` / `null` | **chặn** (400) — không nên/không thể khôi phục | — |
+| `COMPLETED` (PRIVATE) | back to `COMPLETED`, chat works again immediately | intact — OK |
+| `COMPLETED` (PUBLIC) | back to `COMPLETED`, new share link generated, returns to trending | intact — OK |
+| `PENDING` (PUBLIC, not yet approved) | back to `PENDING` (waiting for admin approval). May **optionally** re-enqueue moderation | NULL-embedding chunks intact |
+| `PROCESSING` (processing when deleted) | back to `PROCESSING` then let the RAG callback continue. **Rare edge case** — consider **blocking restore** (return "document is processing, try again later") to avoid a race | optional |
+| `UPLOADING` / `FAILED` / `null` | **block** (400) — should not / cannot be restored | — |
 
-> Với `PENDING` (PUBLIC) sau restore: chunks còn NULL-embedding (giống lúc trước xoá). Nếu
-> muốn doc được duyệt lại tự động, có thể `ModerationStreamProducer.enqueue(documentId)`
-> (consumer đã idempotent: `process()` là no-op khi `status != PENDING`, mà doc đang
-> `PENDING` nên chạy thật). **Khuyến nghị bản đầu KHÔNG auto-retrigger** — để admin duyệt
-> thủ công, tránh user xoá-khôi phục để "tẩy" kết quả moderation.
+> For `PENDING` (PUBLIC) after restore: chunks still have NULL-embedding (same as before deletion). If
+> you want the doc re-approved automatically, you can `ModerationStreamProducer.enqueue(documentId)`
+> (the consumer is already idempotent: `process()` is a no-op when `status != PENDING`, and the doc is
+> `PENDING` so it runs for real). **Recommend NOT auto-retriggering in the first version** — let the admin
+> approve manually, to prevent users from delete-restoring to "reset" the moderation result.
 
 ---
 
-## 5. Leak-prevention kiểm chứng (an toàn khi giữ chunks)
+## 5. Leak-prevention verification (safe when keeping chunks)
 
-Khi soft-delete mới (không xoá RAG), doc `DELETED` vẫn có chunks/embeddings trong store.
-Kiểm chứng không rò rỉ:
+With the new soft-delete (no RAG deletion), a `DELETED` doc still has chunks/embeddings in the store.
+Verify there is no leak:
 
-1. **Chat**: `ChatServiceImpl:246` chặn `deletedAt != null || DELETED` → 404 trước khi
-   gọi RAG. Doc `DELETED` không bao giờ vào `document_id` của `/chat`. ✅
-2. **Search công khai**: `searchPublicDocuments` lọc `d.deletedAt IS NULL` + `COMPLETED`. ✅
-3. **Trending**: `findTrendingDocuments` lọc `d.deletedAt IS NULL`. ✅
-4. **Recommend**: `findRecommendedDocumentIds` lọc `d.deleted_at IS NULL`. ✅
-5. **Preview/shared**: `getSharedDocument`/`getPreviewAccess` chặn `DELETED`/`deletedAt`. ✅
-6. **Personal/trash**: tách bạch (`findActiveDocumentsByUploaderId` vs
+1. **Chat**: `ChatServiceImpl:246` blocks `deletedAt != null || DELETED` → 404 before
+   calling RAG. A `DELETED` doc never reaches the `document_id` of `/chat`. ✅
+2. **Public search**: `searchPublicDocuments` filters `d.deletedAt IS NULL` + `COMPLETED`. ✅
+3. **Trending**: `findTrendingDocuments` filters `d.deletedAt IS NULL`. ✅
+4. **Recommend**: `findRecommendedDocumentIds` filters `d.deleted_at IS NULL`. ✅
+5. **Preview/shared**: `getSharedDocument`/`getPreviewAccess` block `DELETED`/`deletedAt`. ✅
+6. **Personal/trash**: kept separate (`findActiveDocumentsByUploaderId` vs
    `findSoftDeletedDocumentsByUploaderId`). ✅
 
-→ Kết luận: giữ chunks khi soft-delete **không tạo lỗ hổng** so với hiện tại (cùng cơ chế
-status-gate đang dùng cho `PENDING`/`REJECTED`).
+→ Conclusion: keeping chunks on soft-delete **creates no hole** compared to today (same status-gate
+mechanism used for `PENDING`/`REJECTED`).
 
 ---
 
-## 6. Edge cases & quyết định
+## 6. Edge cases & decisions
 
-1. **Storage vượt quota khi restore**: không chặn — restore + set user `OVERLIMITSTORAGE`
-   (mirror chiều ngược của delete). User vẫn đọc/restore được, chỉ chặn upload mới (giống
-   convention `OVERLIMITSTORAGE` hiện có: chặn `initiateUpload`, cho phép list/read).
-2. **`linkShare` cũ đã mất**: không cố khôi phục token cũ (đã null). Sinh token mới **chỉ khi
-   PUBLIC + COMPLETED**; PRIVATE hoặc PENDING thì để null (user tự bật share sau).
-3. **Race restore vs hard-delete**: `DocumentPurgeScheduler` chạy 03:00; restore là request
-   người dùng. Cả hai đều `@Transactional` trên cùng `documents` row → PostgreSQL row-lock
-   serialize. Trường hợp xấu nhất: doc vừa bị purge thì restore ném `NOT_FOUND` (chấp nhận được).
-4. **Doc do admin xoá (vi phạm)**: `deletedByAdmin=true` → owner **không** tự restore.
-   Nếu muốn admin có thể undo: thêm `POST /api/v1/admin/documents/{id}/restore` (path
-   `/admin/**` → `ROLE_ADMIN` tự động). **Bản đầu bỏ qua** — admin xoá là quyết định cuối.
-5. **Thứ tự xoá ở hard-delete**: RAG `deleteVectors` **phải chạy trước** `documentRepository.delete`
-   (RAG cần `document_chunks` còn để đọc `metadata.doc_id`). Xem §4.3.
-6. **`deleteFastApiVectorsAsync` có còn cần không?**: phần logic gọi RAG xoá được **dời** vào
-   `hardDeleteDocument` (đồng bộ, trong transaction). Có thể giữ method `deleteFastApiVectorsAsync`
-   (`@Async`) nếu muốn hard-delete không block — **khuyến nghị gọi đồng bộ trong hard-delete**
-   (job nền, không phải request người dùng; việc gọi @Async từ method `@Transactional` cùng
-   bean còn dễ gây self-invocation trap). Đơn giản hoá: xoá method async, gọi `ragClient.deleteVectors`
-   trực tiếp + try/catch best-effort.
-7. **Public doc `PENDING` restore**: không auto-retrigger moderation (xem §4.6) — tránh lạm dụng.
+1. **Storage over quota on restore**: do not block — restore + set the user to `OVERLIMITSTORAGE`
+   (mirror the reverse side of delete). The user can still read/restore; only new uploads are blocked (same
+   as the existing `OVERLIMITSTORAGE` convention: blocks `initiateUpload`, allows list/read).
+2. **Old `linkShare` is gone**: do not try to recover the old token (already null). Generate a new token
+   **only when PUBLIC + COMPLETED**; for PRIVATE or PENDING leave it null (the user enables sharing later).
+3. **Race restore vs hard-delete**: `DocumentPurgeScheduler` runs at 03:00; restore is a user request.
+   Both are `@Transactional` on the same `documents` row → PostgreSQL row-lock serializes them. Worst
+   case: a doc is purged right when restore throws `NOT_FOUND` (acceptable).
+4. **Admin-deleted doc (violation)**: `deletedByAdmin=true` → the owner **cannot** self-restore.
+   If you want admins to be able to undo: add `POST /api/v1/admin/documents/{id}/restore` (path
+   `/admin/**` → `ROLE_ADMIN` automatically). **Skip in the first version** — admin deletion is final.
+5. **Delete order on hard-delete**: RAG `deleteVectors` **must run before** `documentRepository.delete`
+   (RAG needs `document_chunks` to still exist to read `metadata.doc_id`). See §4.3.
+6. **Is `deleteFastApiVectorsAsync` still needed?**: the RAG deletion logic is **moved** into
+   `hardDeleteDocument` (synchronous, inside the transaction). You may keep the `deleteFastApiVectorsAsync`
+   method (`@Async`) if you want hard-delete to not block — **recommend calling it synchronously in hard-delete**
+   (background job, not a user request; calling `@Async` from a `@Transactional` method of the same
+   bean is also prone to the self-invocation trap). Simplification: delete the async method, call `ragClient.deleteVectors`
+   directly + try/catch best-effort.
+7. **PUBLIC `PENDING` doc restore**: do not auto-retrigger moderation (see §4.6) — to prevent abuse.
 
 ---
 
-## 7. Kế hoạch triển khai (step-by-step)
+## 7. Implementation plan (step-by-step)
 
-| Bước | File | Việc |
+| Step | File | Work |
 |---|---|---|
-| 1 | `model/DocumentEntity.java` | Thêm `statusBeforeDeletion` (enum + `@ColumnTransformer`) + `deletedByAdmin` (`Boolean`, default false). |
-| 2 | `initdb.sql` | Thêm 2 cột `status_before_deletion document_status` + `deleted_by_admin boolean DEFAULT false` (đồng bộ với `ddl-auto: update`). |
-| 3 | `service/impl/DocumentServiceImpl.java` — `deleteDocument` | Lưu `statusBeforeDeletion`/`deletedByAdmin=false`; **xoá** `deleteFastApiVectorsAsync(documentId)` ở cuối. |
-| 4 | `service/impl/DocumentServiceImpl.java` — `hardDeleteDocument` | Thêm `ragClient.deleteVectors` **đầu tiên** (best-effort try/catch) — trước các bước xoá S3/DB. |
-| 5 | `service/impl/DocumentServiceImpl.java` | **Mới** `restoreDocument(UUID, UUID)` (logic §4.4): validate → flip trạng thái → cộng storage + quota-check → sinh share link (nếu PUBLIC+COMPLETED) → evict cache → notification. |
-| 6 | `service/impl/ReportServiceImpl.java` — `resolveReport` | Set `statusBeforeDeletion` + `deletedByAdmin=true` (RAG giữ nguyên — vốn đã lazy). |
-| 7 | `service/DocumentService.java` | Thêm `void restoreDocument(UUID documentId, UUID userId)` vào interface. |
-| 8 | `controller/DocumentController.java` | **Mới** `POST /{documentId}/restore` (§4.5). |
-| 9 | `service/impl/DocumentServiceImpl.java` | (Tuỳ chọn) dọn `deleteFastApiVectorsAsync` nếu không còn ai gọi — hoặc giữ nếu hard-delete muốn `@Async`. |
-| 10 | Test | Xem §8. |
+| 1 | `model/DocumentEntity.java` | Add `statusBeforeDeletion` (enum + `@ColumnTransformer`) + `deletedByAdmin` (`Boolean`, default false). |
+| 2 | `initdb.sql` | Add 2 columns `status_before_deletion document_status` + `deleted_by_admin boolean DEFAULT false` (keep in sync with `ddl-auto: update`). |
+| 3 | `service/impl/DocumentServiceImpl.java` — `deleteDocument` | Save `statusBeforeDeletion`/`deletedByAdmin=false`; **remove** `deleteFastApiVectorsAsync(documentId)` at the end. |
+| 4 | `service/impl/DocumentServiceImpl.java` — `hardDeleteDocument` | Add `ragClient.deleteVectors` **first** (best-effort try/catch) — before the S3/DB deletion steps. |
+| 5 | `service/impl/DocumentServiceImpl.java` | **New** `restoreDocument(UUID, UUID)` (logic §4.4): validate → flip status → add storage + quota-check → generate share link (if PUBLIC+COMPLETED) → evict cache → notification. |
+| 6 | `service/impl/ReportServiceImpl.java` — `resolveReport` | Set `statusBeforeDeletion` + `deletedByAdmin=true` (RAG unchanged — already lazy). |
+| 7 | `service/DocumentService.java` | Add `void restoreDocument(UUID documentId, UUID userId)` to the interface. |
+| 8 | `controller/DocumentController.java` | **New** `POST /{documentId}/restore` (§4.5). |
+| 9 | `service/impl/DocumentServiceImpl.java` | (Optional) remove `deleteFastApiVectorsAsync` if no one calls it anymore — or keep it if hard-delete wants `@Async`. |
+| 10 | Test | See §8. |
 
-> Không thêm config mới (`application.yaml`). Không thêm dependency/infra.
+> No new config added (`application.yaml`). No new dependency/infra.
 
 ---
 
 ## 8. Testing
 
-Bám phong cách pure-Mockito hiện có (`@ExtendWith(MockitoExtension.class)`, mock repo/RAG/`storagePlanRepository`/`notificationRepository`, `ReflectionTestUtils` cho `@Value`):
+Follow the existing pure-Mockito style (`@ExtendWith(MockitoExtension.class)`, mock repo/RAG/`storagePlanRepository`/`notificationRepository`, `ReflectionTestUtils` for `@Value`):
 
 - `DocumentServiceImplTest`:
-  - **delete**: verify **không** còn `verify(ragClient).deleteVectors(...)`; verify
-    `setStatusBeforeDeletion(originalStatus)` + `setDeletedByAdmin(false)`; verify trừ storage
-    + (nếu OVERLIMITSTORAGE) restore ACTIVE (như test hiện có).
-  - **restore happy path** (`COMPLETED` PUBLIC): status về `COMPLETED`, `deletedAt=null`,
-    `linkShare` được set token mới (`"doc-" + ...`), `storageUsed += size`, **không** gọi RAG,
+  - **delete**: verify there is **no longer** `verify(ragClient).deleteVectors(...)`; verify
+    `setStatusBeforeDeletion(originalStatus)` + `setDeletedByAdmin(false)`; verify storage subtraction
+    + (if OVERLIMITSTORAGE) restore to ACTIVE (like the existing test).
+  - **restore happy path** (`COMPLETED` PUBLIC): status back to `COMPLETED`, `deletedAt=null`,
+    `linkShare` set to a new token (`"doc-" + ...`), `storageUsed += size`, **does not** call RAG,
     evict trending, save notification `DOCUMENT_RESTORED`.
-  - **restore PRIVATE**: `linkShare` **không** được set (chỉ sinh khi PUBLIC+COMPLETED).
-  - **restore vượt quota**: `storageUsed + size > limit` → `OVERLIMITSTORAGE` (không ném).
-  - **restore doc không ở trạng thái xoá** → `BAD_REQUEST`.
-  - **restore doc admin-xoá** (`deletedByAdmin=true`) → `FORBIDDEN`.
-  - **restore không phải owner** → `FORBIDDEN`.
+  - **restore PRIVATE**: `linkShare` **not** set (only generated when PUBLIC+COMPLETED).
+  - **restore over quota**: `storageUsed + size > limit` → `OVERLIMITSTORAGE` (no throw).
+  - **restore a doc not in deleted state** → `BAD_REQUEST`.
+  - **restore an admin-deleted doc** (`deletedByAdmin=true`) → `FORBIDDEN`.
+  - **restore not the owner** → `FORBIDDEN`.
   - **restore `UPLOADING`/`null` pre-status** → `BAD_REQUEST`.
-  - **hard-delete**: verify `ragClient.deleteVectors` được gọi **trước** `documentRepository.delete`;
-    verify xoá S3 (file + preview) + dependents (reviews/reports/session_documents).
-- `ReportServiceImplTest`: verify set `statusBeforeDeletion` + `deletedByAdmin=true`;
-  verify **không** gọi RAG (giữ nguyên).
-- `DocumentControllerTest` (nếu có controller test): verify `POST /restore` gọi service đúng
-  `documentId`/`userId`.
+  - **hard-delete**: verify `ragClient.deleteVectors` is called **before** `documentRepository.delete`;
+    verify S3 deletion (file + preview) + dependents (reviews/reports/session_documents).
+- `ReportServiceImplTest`: verify setting `statusBeforeDeletion` + `deletedByAdmin=true`;
+  verify **no** RAG call (unchanged).
+- `DocumentControllerTest` (if a controller test exists): verify `POST /restore` calls the service with
+  the correct `documentId`/`userId`.
 
-> `@CacheEvict` proxy-based → **inert** trong pure-Mockito (kiểm chứng cấu trúc, giống
-> `@Cacheable` hiện có). RAG/Stream không cần Redis thật trong unit test.
+> `@CacheEvict` is proxy-based → **inert** in pure-Mockito (verify the structure, like
+> the existing `@Cacheable`). RAG/Stream do not need a real Redis in unit tests.
 
-**Smoke test (tuỳ chọn, khi có infra)**: `docker compose up -d`, upload 1 doc → chat (verify
+**Smoke test (optional, when infra is available)**: `docker compose up -d`, upload 1 doc → chat (verify
 citation) → soft-delete → verify `SELECT count(*) FROM document_chunks WHERE document_id=…`
-**vẫn > 0** (lazy) → restore → chat lại (verify vẫn citations, không re-embed) → đợi/force
-hard-delete → verify chunks = 0 + `parent_docs_store` sạch.
+**is still > 0** (lazy) → restore → chat again (verify citations still present, no re-embed) → wait/force
+hard-delete → verify chunks = 0 + `parent_docs_store` clean.
 
 ---
 
-## 9. Rủi ro & đánh giá
+## 9. Risks & assessment
 
-| Rủi ro | Mức | Giảm thiểu |
+| Risk | Level | Mitigation |
 |---|---|---|
-| Zombie chunks chiếm pgvector/filesystem trong 30 ngày | Thấp | Bị chặn bởi `retention-days`; có thể giảm hoặc thêm job purge RAG sớm (gọi `deleteVectors` cho doc `DELETED` quá N ngày nhưng chưa tới hard-delete — tách khỏi xoá file S3). |
-| Race restore vs purge scheduler | Thấp | Cùng row + `@Transactional` → PG row-lock serialize; xấu nhất là `NOT_FOUND`. |
-| Restore doc `PENDING` (PUBLIC) để "tẩy" moderation | Trung bình | Không auto-retrigger moderation; admin duyệt thủ công. |
-| Quên gọi RAG trước DB cascade ở hard-delete → parent_docs zombie | Trung bình | Đặt `ragClient.deleteVectors` **đầu tiên** trong `hardDeleteDocument` + unit test assert thứ tự. |
-| Migration dữ liệu cũ: doc `DELETED` hiện tại (đã eager-purge) không có `statusBeforeDeletion` | Thấp | `statusBeforeDeletion` nullable → restore sẽ chặn (`pre == null` → 400). Doc cũ đã mất RAG thì không restore được (đúng — hoặc fallback re-ingest Phương án B cho riêng các doc này nếu cần). |
+| Zombie chunks occupy pgvector/filesystem for 30 days | Low | Bounded by `retention-days`; can be lowered or add an early RAG purge job (call `deleteVectors` for `DELETED` docs older than N days but not yet hard-deleted — separate from S3 file deletion). |
+| Race restore vs purge scheduler | Low | Same row + `@Transactional` → PG row-lock serialize; worst case is `NOT_FOUND`. |
+| Restoring a `PENDING` (PUBLIC) doc to "reset" moderation | Medium | Do not auto-retrigger moderation; admin approves manually. |
+| Forgetting to call RAG before the DB cascade on hard-delete → zombie parent_docs | Medium | Put `ragClient.deleteVectors` **first** in `hardDeleteDocument` + unit test asserting the order. |
+| Old data migration: existing `DELETED` docs (already eager-purged) have no `statusBeforeDeletion` | Low | `statusBeforeDeletion` is nullable → restore will block (`pre == null` → 400). Old docs that already lost RAG cannot be restored (correct — or fallback to Option B re-ingest for just these docs if needed). |
 
 ---
 
-## 10. Tóm tắt quyết định
+## 10. Summary of decisions
 
-- **Chọn Phương án A (lazy purge)**: dời `deleteVectors` từ soft-delete → hard-delete.
-- **2 cột mới** `status_before_deletion` + `deleted_by_admin`.
-- **1 endpoint mới** `POST /api/v1/documents/{id}/restore` (owner, không cho doc admin-xoá).
-- Restore **không đụng RAG** — index còn nguyên → tức thì, miễn phí.
-- Leak-prevention **không đổi** (vẫn status-gate ở Java).
-- Khử sự không nhất quán owner-vs-admin soft-delete (cả hai đều lazy).
+- **Choose Option A (lazy purge)**: move `deleteVectors` from soft-delete → hard-delete.
+- **2 new columns** `status_before_deletion` + `deleted_by_admin`.
+- **1 new endpoint** `POST /api/v1/documents/{id}/restore` (owner, not allowed for admin-deleted docs).
+- Restore **does not touch RAG** — the index stays intact → instant and free.
+- Leak-prevention **unchanged** (still status-gate in Java).
+- Removes the owner-vs-admin soft-delete inconsistency (both are lazy).

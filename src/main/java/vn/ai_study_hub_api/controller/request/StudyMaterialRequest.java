@@ -18,6 +18,13 @@ public class StudyMaterialRequest {
 
     private UUID documentId;
 
+    /**
+     * Optional chat session to attach this generation to. When null, a new session is created so
+     * the quiz/flashcard shows up in chat history. When set, the generation is appended to that
+     * session (must be owned by the caller).
+     */
+    private UUID sessionId;
+
     private Integer count;
 
     private String focus;
