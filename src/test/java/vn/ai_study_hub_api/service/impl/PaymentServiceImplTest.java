@@ -54,6 +54,7 @@ public class PaymentServiceImplTest {
         ReflectionTestUtils.setField(paymentService, "hashSecret", "PKBMX9FZP5GGBMF31R9WWV4TQKNK2J2P");
         ReflectionTestUtils.setField(paymentService, "payUrl", "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html");
         ReflectionTestUtils.setField(paymentService, "returnUrl", "http://localhost:8080/api/v1/payments/vnpay-callback");
+        ReflectionTestUtils.setField(paymentService, "planDurationHours", 720);
     }
 
     @Test

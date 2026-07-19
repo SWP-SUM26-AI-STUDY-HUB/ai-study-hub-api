@@ -84,7 +84,7 @@ CREATE TABLE "invoices" (
   "status" invoice_status DEFAULT 'pending',
   "created_at" timestamp DEFAULT (now()),
   "updated_at" timestamp DEFAULT (now()),
-  "duration_days" integer DEFAULT 30
+  "duration_hours" integer DEFAULT 720
 );
 
 CREATE TABLE "documents" (
