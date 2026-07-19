@@ -142,7 +142,7 @@ Authorization is **path-based**, not using `@PreAuthorize`:
 | BR-PAY-02 | The invoice lifecycle has standard states. | `invoice_status` ∈ {`pending`, `success`, `failed`}; successful payment: `pending → success`. |
 | BR-PAY-03 | IPN (server-to-server) must verify the signature before processing. | `GET /payments/vnpay-ipn` verifies HMAC-SHA512; invalid signature → rejected. |
 | BR-PAY-04 | The browser callback is a redirect, not the source of truth. | `GET /payments/vnpay-callback` returns **302** to the frontend; final status comes from IPN. |
-| BR-PAY-05 | On a successful transaction, the plan upgrade must be an **atomic transaction**. | Within the same DB transaction: change `plan_id`; set `plan_expires_at = NOW() + duration_days` (default **30**); `overlimitstorage → active`; create `notifications` (`PLAN_UPGRADED`). |
+| BR-PAY-05 | On a successful transaction, the plan upgrade must be an **atomic transaction**. | Within the same DB transaction: change `plan_id`; set `plan_expires_at = NOW() + duration_hours` (default **720** = 30 days, configurable via `app.plan.duration-hours`); `overlimitstorage → active`; create `notifications` (`PLAN_UPGRADED`). |
 | BR-PAY-06 | Initiating payment for a free plan is not allowed. | Plan with `price ≤ 0` → reject payment creation (`POST /payments/create-payment`). |
 | BR-PAY-07 | Users can look up their own payment history. | `GET /payments/history` filtered by `user_id = current_user_id`. |
 

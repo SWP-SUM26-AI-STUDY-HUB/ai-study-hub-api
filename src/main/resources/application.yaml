@@ -95,6 +95,11 @@ fastapi:
 
 app:
   share-url-prefix: ${SHARE_URL_PREFIX:http://localhost:5173/shared/}
+  plan:
+    # Plan duration applied on a successful VNPay payment (BR-PAY-05). Unit is HOURS so test
+    # windows shorter than a day are expressible (plusDays() cannot do sub-day). Default 720h = 30 days.
+    # To test the downgrade flow fast: set APP_PLAN_DURATION_HOURS=1 (plan expires in 1 hour).
+    duration-hours: ${APP_PLAN_DURATION_HOURS:15}
   upload:
     # Per-file size cap enforced in DocumentServiceImpl.initiateUpload.
     # Keep spring.servlet.multipart.max-file-size >= this value.

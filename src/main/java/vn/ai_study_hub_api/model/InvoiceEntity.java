@@ -51,7 +51,7 @@ public class InvoiceEntity {
     @org.hibernate.annotations.UpdateTimestamp
     private LocalDateTime updatedAt;
 
-    @Column(name = "duration_days")
+    @Column(name = "duration_hours")
     @Builder.Default
-    private Integer durationDays = 30;
+    private Integer durationHours = 720;
 }

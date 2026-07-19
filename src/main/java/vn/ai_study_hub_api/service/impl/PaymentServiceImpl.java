@@ -50,6 +50,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Value("${vnpay.return-url}")
     private String returnUrl;
+    @Value("${app.plan.duration-hours:720}")
+    private Integer planDurationHours;
 
     @Override
     @Transactional
@@ -71,7 +73,7 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(plan.getPrice())
                 .provider("VNPAY")
                 .status(InvoiceStatus.PENDING)
-                .durationDays(30)
+                .durationHours(planDurationHours)
                 .build();
 
         invoice = invoiceRepository.save(invoice);
@@ -215,11 +217,11 @@ public class PaymentServiceImpl implements PaymentService {
             user.setPlanId(invoice.getPlanId());
 
             java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            int duration = invoice.getDurationDays() != null ? invoice.getDurationDays() : 30;
+            long duration = invoice.getDurationHours() != null ? invoice.getDurationHours() : 720;
             if (user.getPlanExpiresAt() != null && user.getPlanExpiresAt().isAfter(now)) {
-                user.setPlanExpiresAt(user.getPlanExpiresAt().plusDays(duration));
+                user.setPlanExpiresAt(user.getPlanExpiresAt().plusHours(duration));
             } else {
-                user.setPlanExpiresAt(now.plusDays(duration));
+                user.setPlanExpiresAt(now.plusHours(duration));
             }
 
             if (user.getStatus() == UserStatus.OVERLIMITSTORAGE) {
