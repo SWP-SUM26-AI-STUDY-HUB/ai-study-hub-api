@@ -7,7 +7,9 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import vn.ai_study_hub_api.common.ApiResponse;
 import vn.ai_study_hub_api.controller.response.AdminDashboardStatsResponse;
+import vn.ai_study_hub_api.controller.response.AiMetricsResponse;
 import vn.ai_study_hub_api.service.AdminStatsService;
+import vn.ai_study_hub_api.service.AiMetricsService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -15,12 +17,17 @@ import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 public class AdminStatsControllerTest {
 
     @Mock
     private AdminStatsService adminStatsService;
+
+    @Mock
+    private AiMetricsService aiMetricsService;
 
     @InjectMocks
     private AdminStatsController adminStatsController;
@@ -57,5 +64,33 @@ public class AdminStatsControllerTest {
         assertEquals(BigDecimal.valueOf(500.00), response.getData().getTotalRevenueCurrentMonth());
 
         verify(adminStatsService, times(1)).getDashboardStats(any(LocalDateTime.class), any(LocalDateTime.class));
+    }
+    @Test
+    void getAiMetrics_delegatesToServiceWithDefaultWindow() {
+        AiMetricsResponse mockResponse = AiMetricsResponse.empty("2026-07-12T00:00:00Z", "2026-07-19T00:00:00Z", false);
+        when(aiMetricsService.getAiMetrics(anyString(), anyString())).thenReturn(mockResponse);
+
+        ApiResponse<AiMetricsResponse> response = adminStatsController.getAiMetrics(null, null);
+
+        assertNotNull(response);
+        assertTrue(response.isSuccess());
+        assertEquals("AI metrics retrieved successfully", response.getMessage());
+        assertFalse(response.getData().isConfigured());
+        verify(aiMetricsService, times(1)).getAiMetrics(anyString(), anyString());
+    }
+
+    @Test
+    void getAiMetrics_passesExplicitWindowAsIsoUtc() {
+        AiMetricsResponse mockResponse = AiMetricsResponse.builder().configured(true).build();
+        when(aiMetricsService.getAiMetrics(eq("2026-07-10T00:00:00Z"), eq("2026-07-18T00:00:00Z")))
+                .thenReturn(mockResponse);
+
+        ApiResponse<AiMetricsResponse> response = adminStatsController.getAiMetrics(
+                LocalDateTime.of(2026, 7, 10, 0, 0),
+                LocalDateTime.of(2026, 7, 18, 0, 0));
+
+        assertNotNull(response);
+        assertTrue(response.isSuccess());
+        verify(aiMetricsService).getAiMetrics(eq("2026-07-10T00:00:00Z"), eq("2026-07-18T00:00:00Z"));
     }
 }

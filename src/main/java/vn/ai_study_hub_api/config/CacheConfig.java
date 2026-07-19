@@ -40,6 +40,9 @@ public class CacheConfig {
     /** All public tags (onboarding survey). Tiny set, rarely mutates. */
     public static final String CACHE_PUBLIC_TAGS = "publicTags";
 
+    /** Admin AI/RAG dashboard payload (Langfuse Metrics API v2). Fan-out of ~15 queries → cache hard. */
+    public static final String CACHE_AI_METRICS = "aiMetrics";
+
     private static final String DATETIME_FORMAT = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
 
     @Value("${app.cache.trending-documents-ttl-minutes:10}")
@@ -50,6 +53,9 @@ public class CacheConfig {
 
     @Value("${app.cache.default-ttl-minutes:5}")
     private long defaultTtlMinutes;
+
+    @Value("${app.cache.ai-metrics-ttl-minutes:5}")
+    private long aiMetricsTtlMinutes;
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
@@ -75,6 +81,7 @@ public class CacheConfig {
         Map<String, RedisCacheConfiguration> perCacheConfig = new HashMap<>();
         perCacheConfig.put(CACHE_TRENDING_DOCUMENTS, jsonConfig.entryTtl(Duration.ofMinutes(trendingTtlMinutes)));
         perCacheConfig.put(CACHE_PUBLIC_TAGS, jsonConfig.entryTtl(Duration.ofMinutes(publicTagsTtlMinutes)));
+        perCacheConfig.put(CACHE_AI_METRICS, jsonConfig.entryTtl(Duration.ofMinutes(aiMetricsTtlMinutes)));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(jsonConfig.entryTtl(Duration.ofMinutes(defaultTtlMinutes)))
