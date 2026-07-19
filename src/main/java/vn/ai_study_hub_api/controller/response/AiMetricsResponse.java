@@ -1,8 +1,9 @@
 package vn.ai_study_hub_api.controller.response;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-
+import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,6 +23,8 @@ import java.util.List;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class AiMetricsResponse {
 
     /** ISO-8601 UTC lower bound of the queried window (inclusive). */
