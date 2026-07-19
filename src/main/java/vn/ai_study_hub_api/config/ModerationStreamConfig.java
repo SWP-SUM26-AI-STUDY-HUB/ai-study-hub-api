@@ -56,6 +56,11 @@ public class ModerationStreamConfig {
 
         StreamMessageListenerContainerOptions<String, org.springframework.data.redis.connection.stream.MapRecord<String, String, String>>
                 options = StreamMessageListenerContainerOptions.builder()
+                // Spring Data Redis 4.0 changed isAutoStartup() to default to FALSE (stored as a
+                // primitive boolean), so Spring's lifecycle processor no longer auto-starts the
+                // container unless we opt in here. Without this, the consumer group is created but
+                // never polled and moderation jobs sit undelivered forever.
+                .autoStartup(true)
                 .pollTimeout(Duration.ofSeconds(pollTimeoutSeconds))
                 .batchSize(batchSize)
                 .build();
