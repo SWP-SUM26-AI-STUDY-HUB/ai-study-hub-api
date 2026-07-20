@@ -1,6 +1,7 @@
 package vn.ai_study_hub_api.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,9 @@ import org.springframework.stereotype.Service;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+
+    @Value("${app.frontend-url:http://localhost:5173}")
+    private String frontendUrl;
 
     @Autowired
     public EmailService(JavaMailSender mailSender) {
@@ -23,8 +27,11 @@ public class EmailService {
         mailSender.send(message);
     }
     public void sendResetPasswordEmail(String toEmail, String resetToken) {
-        // Link này sau này ông đổi thành đường dẫn giao diện Reset Mật khẩu của Frontend nhé
-        String resetLink = "http://localhost:5173/reset-password?token=" + resetToken;
+        String baseUrl = frontendUrl;
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        String resetLink = baseUrl + "/reset-password?token=" + resetToken;
 
         jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
         try {
