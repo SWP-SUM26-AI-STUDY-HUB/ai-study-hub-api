@@ -342,6 +342,13 @@ public class AuthServiceImpl implements AuthService {
         UserEntity user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Email address not found!"));
 
+        if (UserStatus.BANNED.equals(user.getStatus())) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned!");
+        }
+        if (UserStatus.INACTIVE.equals(user.getStatus())) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Your account is inactive! Please verify your email first.");
+        }
+
         String resetToken = java.util.UUID.randomUUID().toString();
         redisTokenService.saveOtp("reset:" + resetToken, user.getEmail(), 900);
         emailService.sendResetPasswordEmail(user.getEmail(), resetToken);
@@ -359,6 +366,10 @@ public class AuthServiceImpl implements AuthService {
 
         UserEntity user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found!"));
+
+        if (UserStatus.BANNED.equals(user.getStatus())) {
+            throw new AppException(HttpStatus.FORBIDDEN, "Your account has been banned!");
+        }
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
