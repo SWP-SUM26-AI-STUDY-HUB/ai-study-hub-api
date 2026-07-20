@@ -721,7 +721,7 @@ public class DocumentServiceImplTest {
     }
 
     @Test
-    void generateShareLink_NotOwner() {
+    void generateShareLink_NonOwnerPrivateDoc_Forbidden() {
         UUID otherUserId = UUID.randomUUID();
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
 
@@ -729,7 +729,36 @@ public class DocumentServiceImplTest {
                 documentService.generateShareLink(documentId, otherUserId)
         );
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
-        assertEquals("You are not the owner of this document", exception.getMessage());
+        assertEquals("You do not have access to this document", exception.getMessage());
+        verify(documentRepository, never()).save(any());
+    }
+
+    @Test
+    void generateShareLink_NonOwnerPublicCompleted_MintsToken() {
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        UUID otherUserId = UUID.randomUUID();
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        when(documentRepository.save(any(DocumentEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DocumentEntity result = documentService.generateShareLink(documentId, otherUserId);
+
+        assertNotNull(result.getLinkShare());
+        assertTrue(result.getLinkShare().startsWith("doc-"));
+        verify(documentRepository, times(1)).save(mockDocument);
+    }
+
+    @Test
+    void generateShareLink_NonOwnerPublic_ReusesExistingToken() {
+        mockDocument.setVisibility(DocumentVisibility.PUBLIC);
+        mockDocument.setStatus(DocumentStatus.COMPLETED);
+        mockDocument.setLinkShare("doc-existing");
+        UUID otherUserId = UUID.randomUUID();
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+
+        DocumentEntity result = documentService.generateShareLink(documentId, otherUserId);
+
+        assertEquals("doc-existing", result.getLinkShare()); // non-owner must not rotate the token
         verify(documentRepository, never()).save(any());
     }
 

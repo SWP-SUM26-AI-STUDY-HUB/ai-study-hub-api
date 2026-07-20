@@ -309,14 +309,23 @@ public class DocumentServiceImpl implements DocumentService {
             throw new AppException(HttpStatus.NOT_FOUND, "Document not found");
         }
 
-        if (!document.getUploader().getId().equals(userId)) {
-            throw new AppException(HttpStatus.FORBIDDEN, "You are not the owner of this document");
+        // Owner may mint/rotate the token; any user may share an already-public, completed
+        // document — same owner-OR-public+completed rule as ChatService / StudyMaterialService.
+        boolean isOwner = document.getUploader() != null && document.getUploader().getId().equals(userId);
+        boolean isPublicCompleted = DocumentVisibility.PUBLIC.equals(document.getVisibility())
+                && DocumentStatus.COMPLETED.equals(document.getStatus());
+
+        if (!(isOwner || isPublicCompleted)) {
+            throw new AppException(HttpStatus.FORBIDDEN, "You do not have access to this document");
         }
 
-        String token = "doc-" + UUID.randomUUID().toString();
-        document.setLinkShare(token);
-
-        return documentRepository.save(document);
+        // Owner can regenerate (rotate) the token; a non-owner only reuses the existing one,
+        // minting on demand when none exists yet (benign — the document is already public).
+        if (isOwner || document.getLinkShare() == null || document.getLinkShare().isBlank()) {
+            document.setLinkShare("doc-" + UUID.randomUUID());
+            return documentRepository.save(document);
+        }
+        return document;
     }
 
     @Override
