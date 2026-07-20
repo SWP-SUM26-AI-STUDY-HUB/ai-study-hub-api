@@ -72,7 +72,15 @@ public class PaymentController {
             // Ignore callback exceptions to ensure the user redirect still happens
         }
         String responseCode = queryParams.get("vnp_ResponseCode");
-        String targetUrl = frontendUrl + "?paymentStatus=" + ("00".equals(responseCode) ? "success" : "failed");
+        
+        org.springframework.web.util.UriComponentsBuilder builder = org.springframework.web.util.UriComponentsBuilder
+                .fromUriString(frontendUrl)
+                .path("/payment-success")
+                .queryParam("paymentStatus", "00".equals(responseCode) ? "success" : "failed");
+        
+        queryParams.forEach(builder::queryParam);
+        
+        String targetUrl = builder.toUriString();
         return new org.springframework.web.servlet.view.RedirectView(targetUrl);
     }
 

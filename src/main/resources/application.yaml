@@ -95,6 +95,7 @@ fastapi:
 
 app:
   share-url-prefix: ${SHARE_URL_PREFIX:http://localhost:5173/shared/}
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
   plan:
     # Plan duration applied on a successful VNPay payment (BR-PAY-05). Unit is HOURS so test
     # windows shorter than a day are expressible (plusDays() cannot do sub-day). Default 720h = 30 days.
