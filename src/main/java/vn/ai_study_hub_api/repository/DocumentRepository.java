@@ -40,8 +40,8 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
            "WHERE d.visibility = :visibility " +
            "AND d.status = :status " +
            "AND d.deletedAt IS NULL " +
-           "AND (LOWER(d.title) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
-           "  OR LOWER(d.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+           "AND (function('unaccent', LOWER(d.title)) LIKE function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) " +
+           "  OR function('unaccent', LOWER(d.description)) LIKE function('unaccent', LOWER(CONCAT('%', :keyword, '%'))))")
     List<DocumentEntity> searchPublicDocuments(
             @Param("keyword") String keyword,
             @Param("visibility") DocumentVisibility visibility,
