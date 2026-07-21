@@ -343,7 +343,7 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "Email address not found!"));
 
         String resetToken = java.util.UUID.randomUUID().toString();
-        redisTokenService.saveOtp("reset:" + resetToken, user.getEmail(), 900);
+        redisTokenService.saveResetToken(user.getEmail(), resetToken, 900);
         emailService.sendResetPasswordEmail(user.getEmail(), resetToken);
     }
 
@@ -351,19 +351,19 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
 
-        String email = redisTokenService.getOtp("reset:" + request.getToken());
-        if (email == null) {
+        String storedToken = redisTokenService.getResetToken(request.getEmail());
+        if (storedToken == null || !storedToken.equals(request.getToken())) {
             throw new AppException(HttpStatus.BAD_REQUEST, "Invalid or expired reset token!");
         }
 
 
-        UserEntity user = userRepository.findByEmail(email)
+        UserEntity user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new AppException(HttpStatus.NOT_FOUND, "User not found!"));
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
 
-        redisTokenService.deleteOtp("reset:" + request.getToken());
+        redisTokenService.deleteResetToken(request.getEmail());
     }
 
     @Override
