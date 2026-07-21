@@ -67,7 +67,7 @@ public class PaymentServiceImplTest {
                 .name("Premium")
                 .price(new BigDecimal("200000"))
                 .storageLimit(10L)
-                .maxAiRequestsPerDay(500)
+                .maxAiRequestsPerDay(60)
                 .build();
 
         InvoiceEntity invoice = InvoiceEntity.builder()
