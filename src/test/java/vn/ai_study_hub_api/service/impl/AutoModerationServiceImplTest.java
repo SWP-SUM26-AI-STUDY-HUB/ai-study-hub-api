@@ -3,6 +3,7 @@ package vn.ai_study_hub_api.service.impl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -18,7 +19,7 @@ import vn.ai_study_hub_api.service.DocumentService;
 
 import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -43,6 +44,8 @@ public class AutoModerationServiceImplTest {
 
     @Mock
     private DocumentService documentService;
+    @Mock
+    private LangfuseIngestionClient langfuseIngestion;
 
     @InjectMocks
     private AutoModerationServiceImpl autoModerationService;
@@ -260,6 +263,54 @@ public class AutoModerationServiceImplTest {
 
         verify(documentService, times(1)).approveDocument(documentId);
         verify(imageExtractor, never()).extract(any(), any(), anyInt());
+    }
+
+    // --- Langfuse ingestion (fail-open) ---
+
+    @Test
+    void process_FlushesLangfuseTraceWithDecision() {
+        ReflectionTestUtils.setField(autoModerationService, "langfuseEnabled", true);
+        when(langfuseIngestion.isConfigured()).thenReturn(true);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        ChunkContentProjection mockChunk = mock(ChunkContentProjection.class);
+        when(mockChunk.getContent()).thenReturn("clean content");
+        when(chunkRepository.findChunkContentsByDocumentId(documentId)).thenReturn(List.of(mockChunk));
+
+        setupMockWebClient(Mono.just(lowScoreResponse()));
+
+        autoModerationService.process(documentId);
+
+        verify(documentService, times(1)).approveDocument(documentId);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Map<String, Object>>> captor = ArgumentCaptor.forClass(List.class);
+        verify(langfuseIngestion, times(1)).ingest(captor.capture());
+
+        List<Map<String, Object>> batch = captor.getValue();
+        // 1 trace-create + 1 generation-create (single text batch).
+        assertEquals(2, batch.size());
+        Map<String, Object> traceEvent = batch.get(0);
+        assertEquals("trace-create", traceEvent.get("type"));
+        Map<?, ?> traceBody = (Map<?, ?>) traceEvent.get("body");
+        assertEquals("moderation", traceBody.get("name"));
+        assertEquals("APPROVED", ((Map<?, ?>) traceBody.get("metadata")).get("decision"));
+        assertEquals("generation-create", batch.get(1).get("type"));
+    }
+
+    @Test
+    void process_LangfuseFailureIsFailOpen_DoesNotBreakModeration() {
+        ReflectionTestUtils.setField(autoModerationService, "langfuseEnabled", true);
+        when(langfuseIngestion.isConfigured()).thenReturn(true);
+        // Ingest throws — the service must swallow it (observability never blocks moderation).
+        doThrow(new RuntimeException("Langfuse ingest down")).when(langfuseIngestion).ingest(any());
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(mockDocument));
+        ChunkContentProjection mockChunk = mock(ChunkContentProjection.class);
+        when(mockChunk.getContent()).thenReturn("clean content");
+        when(chunkRepository.findChunkContentsByDocumentId(documentId)).thenReturn(List.of(mockChunk));
+
+        setupMockWebClient(Mono.just(lowScoreResponse()));
+
+        assertDoesNotThrow(() -> autoModerationService.process(documentId));
+        verify(documentService, times(1)).approveDocument(documentId);
     }
 
     private AutoModerationServiceImpl.ModerationResponse lowScoreResponse() {
