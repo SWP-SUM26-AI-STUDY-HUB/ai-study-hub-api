@@ -54,7 +54,7 @@ public class CacheConfig {
     @Value("${app.cache.default-ttl-minutes:5}")
     private long defaultTtlMinutes;
 
-    @Value("${app.cache.ai-metrics-ttl-minutes:5}")
+    @Value("${app.cache.ai-metrics-ttl-minutes:720}")
     private long aiMetricsTtlMinutes;
 
     @Bean
