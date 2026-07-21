@@ -19,9 +19,9 @@ import vn.ai_study_hub_api.repository.UserRepository;
 import vn.ai_study_hub_api.security.CustomUserDetails;
 import vn.ai_study_hub_api.security.JwtTokenProvider;
 import vn.ai_study_hub_api.service.RedisTokenService;
-
-import vn.ai_study_hub_api.model.UserRole;
-import vn.ai_study_hub_api.model.UserStatus;
+import vn.ai_study_hub_api.service.EmailService;
+import vn.ai_study_hub_api.controller.request.ForgotPasswordRequest;
+import vn.ai_study_hub_api.controller.request.ResetPasswordRequest;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -45,6 +45,9 @@ public class AuthServiceImplTest {
 
     @Mock
     private RedisTokenService redisTokenService;
+
+    @Mock
+    private EmailService emailService;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -125,5 +128,69 @@ public class AuthServiceImplTest {
 
         verify(passwordEncoder, never()).matches(anyString(), anyString());
         verify(tokenProvider, never()).generateAccessToken(any(CustomUserDetails.class));
+    }
+
+    @Test
+    void forgotPassword_Success() {
+        ForgotPasswordRequest request = new ForgotPasswordRequest();
+        request.setEmail("testuser@example.com");
+
+        when(userRepository.findByEmail("testuser@example.com")).thenReturn(Optional.of(mockUser));
+
+        authService.forgotPassword(request);
+
+        verify(redisTokenService, times(1)).saveResetToken(eq("testuser@example.com"), anyString(), eq(900L));
+        verify(emailService, times(1)).sendResetPasswordEmail(eq("testuser@example.com"), anyString());
+    }
+
+    @Test
+    void forgotPassword_Failure_EmailNotFound() {
+        ForgotPasswordRequest request = new ForgotPasswordRequest();
+        request.setEmail("unknown@example.com");
+
+        when(userRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
+
+        AppException exception = assertThrows(AppException.class, () -> authService.forgotPassword(request));
+        assertEquals(HttpStatus.NOT_FOUND, exception.getStatus());
+        assertEquals("Email address not found!", exception.getMessage());
+
+        verify(redisTokenService, never()).saveResetToken(anyString(), anyString(), anyLong());
+        verify(emailService, never()).sendResetPasswordEmail(anyString(), anyString());
+    }
+
+    @Test
+    void resetPassword_Success() {
+        ResetPasswordRequest request = new ResetPasswordRequest();
+        request.setEmail("testuser@example.com");
+        request.setToken("valid_token");
+        request.setNewPassword("new_secret_password");
+
+        when(redisTokenService.getResetToken("testuser@example.com")).thenReturn("valid_token");
+        when(userRepository.findByEmail("testuser@example.com")).thenReturn(Optional.of(mockUser));
+        when(passwordEncoder.encode("new_secret_password")).thenReturn("encoded_new_password");
+
+        authService.resetPassword(request);
+
+        assertEquals("encoded_new_password", mockUser.getPasswordHash());
+        verify(userRepository, times(1)).save(mockUser);
+        verify(redisTokenService, times(1)).deleteResetToken("testuser@example.com");
+    }
+
+    @Test
+    void resetPassword_Failure_InvalidOrExpiredToken() {
+        ResetPasswordRequest request = new ResetPasswordRequest();
+        request.setEmail("testuser@example.com");
+        request.setToken("invalid_token");
+        request.setNewPassword("new_secret_password");
+
+        when(redisTokenService.getResetToken("testuser@example.com")).thenReturn(null);
+
+        AppException exception = assertThrows(AppException.class, () -> authService.resetPassword(request));
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatus());
+        assertEquals("Invalid or expired reset token!", exception.getMessage());
+
+        verify(userRepository, never()).findByEmail(anyString());
+        verify(userRepository, never()).save(any());
+        verify(redisTokenService, never()).deleteResetToken(anyString());
     }
 }
