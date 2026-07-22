@@ -68,7 +68,7 @@ This document maps the refined functional requirements of the AI Study Hub proje
 - **US-AI-03 (Chat History Management):**
   As a User, I want to view my past chat sessions, rename them, or delete them, So that I can refer back to previous study sessions and keep my chat history organized.
 - **US-AI-04 (Study-Material Generation):**
-  As a User, I want to auto-generate quizzes and flashcards from a document, So that I can self-test and memorize key concepts faster. *(Quiz, flashcard, and chat requests share a single daily AI quota — 15/day on Free, 500/day on Premium. When the quota is exhausted the request is rejected with HTTP 429; if the model refuses to produce content, the API returns an empty list with a reason message rather than an error.)*
+  As a User, I want to auto-generate quizzes and flashcards from a document, So that I can self-test and memorize key concepts faster. *(Quiz, flashcard, and chat requests share a single daily AI quota — 15/day on Free, 60/day on Premium. When the quota is exhausted the request is rejected with HTTP 429; if the model refuses to produce content, the API returns an empty list with a reason message rather than an error.)*
 
 ---
 
@@ -95,7 +95,7 @@ This document maps the refined functional requirements of the AI Study Hub proje
 ## 7. Subscriptions & Payments (F-MON)
 
 - **US-MON-01 (Tier Upgrade):**
-  As a User, I want to select a Premium plan and pay through **VNPay** (receiving a VNPay payment URL and an automated, webhook-confirmed transaction), So that I can upgrade to 10 GB of storage and 500 daily AI requests.
+  As a User, I want to select a Premium plan and pay through **VNPay** (receiving a VNPay payment URL and an automated, webhook-confirmed transaction), So that I can upgrade to 10 GB of storage and 60 daily AI requests.
 - **US-MON-02 (AI Usage Awareness):**
   As a User, I want to check my daily AI request count (shared across chat, quiz, and flashcard) and be warned when I approach my quota limit, So that I can budget my usage or decide to upgrade my subscription.
 - **US-MON-03 (Subscription Expiry Warning):**

@@ -231,7 +231,7 @@ PART 4: AI CHATBOT SUBSYSTEM (RAG ARCHITECTURE)
 
 Step 1: User opens the My Documents page, selects one or more specific documents as the background dataset (Context Window), then enters a question in the chat box (`POST /chat`).
 
-Step 2: [AI Guard Middleware] Backend checks the daily AI quota via Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}`. If it has exceeded the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **500/day**) → **HTTP 429**, the counter **does not increase**.
+Step 2: [AI Guard Middleware] Backend checks the daily AI quota via Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}`. If it has exceeded the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **60/day**) → **HTTP 429**, the counter **does not increase**.
 
 Step 3: If quota remains, System `INCR`s the Redis counter (if the key is newly created → set TTL **24h = 86400 seconds**), checks / creates a ChatSession in `chat_sessions`, and saves the list of selected documents into `session_documents`.
 
@@ -269,7 +269,7 @@ Step 4: User can rename the conversation title (`PATCH /chat/sessions/{id}`) or 
 
 Step 1: User selects a specific document (`COMPLETED`, with access permission) and clicks "Generate Quiz" or "Generate Flashcard" (`POST /study-materials/quiz`, `POST /study-materials/flashcard`).
 
-Step 2: [AI Guard Middleware] Check the daily AI quota — **shared with chat** (same Redis counter `user:ai_limit:{userId}:{date}`, FREE 15/day, Premium 500/day). System **INCRs before calling RAG**; if over the limit → **HTTP 429**, do not generate.
+Step 2: [AI Guard Middleware] Check the daily AI quota — **shared with chat** (same Redis counter `user:ai_limit:{userId}:{date}`, FREE 15/day, Premium 60/day). System **INCRs before calling RAG**; if over the limit → **HTTP 429**, do not generate.
 
 Step 3: System calls RAG service `/quiz/generate` or `/flashcard/generate` with `document_id`. RAG reads the document's chunks and uses the LLM to generate a set of questions/cards.
 
@@ -399,7 +399,7 @@ Step 3: Backend runs `INCR` on that key in Redis:
 - Case 1 (First request on a new day): The key does not exist → Redis automatically creates the key with value 1. Backend immediately sets TTL **24h (= 86400 seconds)** for this key.
 - Case 2 (Subsequent requests): The key exists → Redis adds up to 2, 3, 4... and returns the current count.
 
-Step 4: Backend compares the returned count with the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **500/day**):
+Step 4: Backend compares the returned count with the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **60/day**):
 
 - If **over the limit** → block the request, **HTTP 429**, do not send to the LLM, **counter rollback (does not increase)**, return the message "You have run out of AI turns for today, please upgrade your plan".
 - If within the limit → allow it to continue, forwarding the question to ChatbotService to handle RAG.

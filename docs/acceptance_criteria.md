@@ -23,7 +23,7 @@ For testing edge cases related to permissions and storage limits. These limits a
 | Feature / Limit | Free Plan (Default, plan id = 1) | Premium Plan |
 | :--- | :--- | :--- |
 | **Max Cloud Storage** | **2 GB** | **10 GB** |
-| **Daily AI Request Limit** (shared counter: chat + quiz + flashcard) | **15 / day** | **500 / day** |
+| **Daily AI Request Limit** (shared counter: chat + quiz + flashcard) | **15 / day** | **60 / day** |
 | **Allowed File Formats** | `.pdf`, `.docx`, `.txt`, `.md` | `.pdf`, `.docx`, `.txt`, `.md` |
 | **Max File Upload Size** | **50 MB** (`52428800` bytes) | **50 MB** (`52428800` bytes) |
 | JWT access / refresh token | 1 hour / 7 days | 1 hour / 7 days |
@@ -635,7 +635,7 @@ For testing edge cases related to permissions and storage limits. These limits a
 > The AI Guard intercepts chat requests and enforces the plan's **daily AI quota** (shared across chat + quiz + flashcard). Quota is tracked atomically in Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}` via `INCR` with a 24 h TTL set on first use. Overflow returns **HTTP 429**, makes **no LLM call**, and does **not** increment the counter.
 
 #### Scenario 1: Multi-document chat within quota (Happy Path)
-- **Given** The user is Premium, and has used 10 out of their 500 daily AI requests.
+- **Given** The user is Premium, and has used 10 out of their 60 daily AI requests.
 - **When** The user selects `macroeconomics.pdf` and `exam_notes.docx` and enters the query `"Compare demand-pull and cost-push inflation?"` (`POST /api/v1/chat`, no session ID provided).
 - **Then** The AI Guard middleware verifies the Redis counter is within quota.
 - **And** The system initializes a new Chat Session.

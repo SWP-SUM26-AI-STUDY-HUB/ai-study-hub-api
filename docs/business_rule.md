@@ -106,7 +106,7 @@ Authorization is **path-based**, not using `@PreAuthorize`:
 
 | Rule code | Description | Value / Condition |
 |---|---|---|
-| BR-AI-01 | Each plan has a daily AI quota. | Free = **15 / day**; Premium = **500 / day**. |
+| BR-AI-01 | Each plan has a daily AI quota. | Free = **15 / day**; Premium = **60 / day**. |
 | BR-AI-02 | The AI counter is **shared** across chat + quiz + flashcard. | One chat, one quiz generation, one flashcard generation all deduct from **the same quota**. |
 | BR-AI-03 | The counter is stored in Redis with **atomic** operations. | Key `user:ai_limit:{userId}:{yyyy-MM-dd}`; uses the `INCR` command (atomic). |
 | BR-AI-04 | The quota key TTL is set on the first use of the day. | TTL = **24 hours** (set when `INCR` returns 1). |
@@ -156,7 +156,7 @@ Authorization is **path-based**, not using `@PreAuthorize`:
 | BR-PLAN-02 | There is a scheduled task that **proactively downgrades** expired plans. | `PlanDowngradeScheduler` runs daily at **08:00**; downgrades users with `plan_expires_at < NOW()` to Free. |
 | BR-PLAN-03 | Downgrade also happens **lazily** when the user interacts. | On each request, if `plan_id != Free` AND `plan_expires_at < NOW()` → downgrade immediately; set `plan_expires_at = NULL`. |
 | BR-PLAN-04 | After downgrading to Free, the system rechecks storage against the Free quota to decide the status. | `storage_used > 2 GB` (Free limit) → `overlimitstorage`; otherwise keep `active`. |
-| BR-PLAN-05 | The Premium plan offers a higher quota than Free. | Premium = **10 GB** storage, **500** AI uses/day. |
+| BR-PLAN-05 | The Premium plan offers a higher quota than Free. | Premium = **10 GB** storage, **60** AI uses/day. |
 | BR-PLAN-06 | Hard-delete of soft-deleted documents only runs on the maintenance schedule, independent of plan status. | `DocumentPurgeScheduler` at **03:00**; documents with `deleted_at` older than **30 days** → purge S3 + DB + RAG. |
 
 ---

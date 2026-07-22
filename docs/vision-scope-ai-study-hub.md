@@ -61,7 +61,7 @@ The long-term vision of the AI Study Hub project focuses on three core actors, d
 1.  **Copyright & Legal Risks:** Users might upload copyrighted books or confidential school exam papers to the Public Library.
     *   *Mitigation:* A **hybrid moderation workflow**. Every public upload (and every private→public visibility change) is scored automatically by the OpenAI Moderation API: a max category score **≥0.80** is auto-rejected, **<0.40** is auto-approved, and the **0.40–0.80** band is escalated to manual admin review. Admins retain full manual approve/reject control. A community **Report** tool supports rapid copyright takedown requests, and sanctioned accounts receive in-app notifications.
 2.  **AI API Consumption Costs:** Using commercial LLM APIs (Gemini, OpenAI) can lead to extremely high costs if user requests spike without control.
-    *   *Mitigation:* A strict **daily AI quota** enforced per user via Redis (shared counter across chat, quiz, and flashcard generation; overflow returns HTTP 429 without consuming quota). Quotas differ by plan (Free = 15/day, Premium = 500/day), answers are cached where feasible, and prompt token sizes are optimized.
+    *   *Mitigation:* A strict **daily AI quota** enforced per user via Redis (shared counter across chat, quiz, and flashcard generation; overflow returns HTTP 429 without consuming quota). Quotas differ by plan (Free = 15/day, Premium = 60/day), answers are cached where feasible, and prompt token sizes are optimized.
 3.  **User Adoption Resistance:** Students are used to old tools (Google Drive, Zalo) and might be reluctant to migrate.
     *   *Mitigation:* Design a modern, clean, and simple user experience (UX) with 1-click Google Login. Highlight the unique RAG chatbot and study-material generation features that general cloud storage platforms do not support.
 4.  **Payment Processing Failures:** Network issues could prevent the VNPay server-to-server IPN from reaching the backend, causing subscription delays for Premium users.
@@ -144,7 +144,7 @@ The MVP delivers core individual study management, AI capabilities, automated mo
 *   **Notifications:** in-app notifications for document lifecycle, reviews/reports, plan events, and account sanctions.
 *   **Monetization:**
     *   Dashboard for storage and daily AI usage tracking.
-    *   Plans: **Free Plan** (**2 GB** storage, **15** AI requests/day) and **Premium Plan** (**10 GB** storage, **500** AI requests/day). The daily AI quota is shared across chat, quiz, and flashcard generation.
+    *   Plans: **Free Plan** (**2 GB** storage, **15** AI requests/day) and **Premium Plan** (**10 GB** storage, **60** AI requests/day). The daily AI quota is shared across chat, quiz, and flashcard generation.
     *   **VNPay** sandbox payments with automated IPN-driven activation.
     *   AI quota middleware (HTTP 429 on overflow, counter not incremented).
     *   Scheduled plan-expiry notification and automatic downgrade after the billing cycle. The `overlimitstorage` state **blocks upload only** — affected users can still list, read, and chat with their existing documents until they free up space or renew.
