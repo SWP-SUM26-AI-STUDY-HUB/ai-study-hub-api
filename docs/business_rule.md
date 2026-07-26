@@ -17,7 +17,7 @@ All values (enums, limits, thresholds) in this document are consistent with the 
 |---|---|---|
 | BR-AUTH-01 | User passwords must be stored hashed, never in plaintext. | **bcrypt** algorithm (integrated with Spring Security). |
 | BR-AUTH-02 | The account activation OTP has a finite lifetime, stored in Redis. | TTL = **300 s (5 minutes)**; Redis key `otp:<email>`. |
-| BR-AUTH-03 | The password reset token has its own lifetime, separate from the registration OTP. | TTL = **900 s (15 minutes)**; Redis key `otp:reset:<uuid>` (same `otp:` prefix). |
+| BR-AUTH-03 | The password reset token has its own lifetime, separate from the registration OTP. | TTL = **900 s (15 minutes)**; Redis key `reset_token:<email>` (own `reset_token:` prefix, **separate** from the registration-OTP `otp:` key); the reset token itself is a UUID stored as the value and is looked up by email. |
 | BR-AUTH-04 | Login sessions use a JWT access + refresh pair, with separate short/long lifetimes. | Access = **1 hour** (3 600 000 ms); Refresh = **7 days** (604 800 000 ms). |
 | BR-AUTH-05 | The refresh token must be **rotated** on every use. | Each `POST /auth/refresh` returns a new refresh token; the old refresh token is no longer valid. |
 | BR-AUTH-06 | On logout, the current access token must be invalidated immediately (stateless + blacklist). | Token added to the **Redis blacklist**; TTL = **remaining time** until the access token expires naturally. |
@@ -122,7 +122,7 @@ Authorization is **path-based**, not using `@PreAuthorize`:
 | Rule code | Description | Value / Condition |
 |---|---|---|
 | BR-MOD-01 | Automatic moderation **applies only to PUBLIC documents**. | `private` documents do not go through the moderation queue. |
-| BR-MOD-02 | Moderation uses a **durable** Redis Streams queue, ensuring at-least-once delivery. | Stream `stream:moderation`; consumer group `moderation-cg`; manual ACK; PEL reclaim 60 s. |
+| BR-MOD-02 | Moderation uses a **durable** Redis Streams queue, ensuring at-least-once delivery. | Stream `stream:moderation`; consumer group `moderation-cg`; manual ACK; PEL reclaim **scans every 60 s** and re-claims entries that have been idle **> 5 min** (`reclaim.fixed-delay-ms` = 60 000, `reclaim.min-idle-ms` = 300 000). |
 | BR-MOD-03 | Moderation processing must be **idempotent**. | No-op when `status != PENDING` (does not re-moderate already-moderated documents). |
 | BR-MOD-04 | Triage is based on the highest score across **all text chunks + embedded images**. | `max(score)` over chunks and images; model `omni-moderation-latest`. |
 | BR-MOD-05 | Automatic decision thresholds. | **≥ 0.80** → auto-reject; **< 0.40** → auto-approve; **0.40–0.80** → keep `PENDING` for manual Admin review. |
