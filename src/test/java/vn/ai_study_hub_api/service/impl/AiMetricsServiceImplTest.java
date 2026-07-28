@@ -3,8 +3,11 @@ package vn.ai_study_hub_api.service.impl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import vn.ai_study_hub_api.controller.response.AiMetricsResponse;
@@ -16,6 +19,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -25,6 +29,9 @@ import static org.mockito.Mockito.*;
  * {@link org.mockito.stubbing.Answer} that dispatches a fixture per payload (so the test
  * exercises both the query-construction AND the field-mapping). The service's own
  * virtual-thread fan-out runs for real — {@code .join()} makes the result deterministic.
+ *
+ * <p>Cache I/O ({@link CacheManager}/{@link Cache}) is mocked; the scheduler-driven write
+ * path and cache-only read path are asserted directly.
  */
 @ExtendWith(MockitoExtension.class)
 class AiMetricsServiceImplTest {
@@ -35,19 +42,27 @@ class AiMetricsServiceImplTest {
     @Mock
     private LangfuseMetricsClient client;
 
+    @Mock
+    private CacheManager cacheManager;
+
+    @Mock
+    private Cache aiMetricsCache;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private AiMetricsServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new AiMetricsServiceImpl(client);
+        service = new AiMetricsServiceImpl(client, cacheManager);
     }
 
+    // --- Fan-out (computeMetrics) -----------------------------------------
+
     @Test
-    void getAiMetrics_unconfiguredReturnsEmptyWithoutQuerying() {
+    void computeMetrics_unconfiguredReturnsEmptyWithoutQuerying() {
         when(client.isConfigured()).thenReturn(false);
 
-        AiMetricsResponse resp = service.getAiMetrics(FROM, TO);
+        AiMetricsResponse resp = service.computeMetrics(FROM, TO);
 
         assertEquals(FROM, resp.getFrom());
         assertEquals(TO, resp.getTo());
@@ -60,11 +75,11 @@ class AiMetricsServiceImplTest {
     }
 
     @Test
-    void getAiMetrics_assemblesEveryWidgetFromLangfuseResponses() {
+    void computeMetrics_assemblesEveryWidgetFromLangfuseResponses() {
         when(client.isConfigured()).thenReturn(true);
         when(client.query(anyMap())).thenAnswer(inv -> fixtureFor(inv.getArgument(0)));
 
-        AiMetricsResponse resp = service.getAiMetrics(FROM, TO);
+        AiMetricsResponse resp = service.computeMetrics(FROM, TO);
 
         assertTrue(resp.isConfigured());
         assertTrue(resp.isDataAvailable());
@@ -125,12 +140,12 @@ class AiMetricsServiceImplTest {
     }
 
     @Test
-    void getAiMetrics_failOpenWhenClientThrowsOnEveryQuery() {
+    void computeMetrics_failOpenWhenClientThrowsOnEveryQuery() {
         when(client.isConfigured()).thenReturn(true);
         when(client.query(anyMap())).thenThrow(new RuntimeException("Langfuse down"));
 
         // Must NOT propagate — the dashboard degrades to empty, never 5xx.
-        AiMetricsResponse resp = assertDoesNotThrow(() -> service.getAiMetrics(FROM, TO));
+        AiMetricsResponse resp = assertDoesNotThrow(() -> service.computeMetrics(FROM, TO));
 
         assertTrue(resp.isConfigured());      // keys present, but
         assertFalse(resp.isDataAvailable());  // every widget fail-opened to empty
@@ -146,15 +161,106 @@ class AiMetricsServiceImplTest {
     }
 
     @Test
-    void getAiMetrics_dataAvailableFalseWhenLangfuseHasNoTraces() {
+    void computeMetrics_dataAvailableFalseWhenLangfuseHasNoTraces() {
         when(client.isConfigured()).thenReturn(true);
         when(client.query(anyMap())).thenReturn(objectMapper.createArrayNode()); // all empty
 
-        AiMetricsResponse resp = service.getAiMetrics(FROM, TO);
+        AiMetricsResponse resp = service.computeMetrics(FROM, TO);
 
         assertTrue(resp.isConfigured());
         assertFalse(resp.isDataAvailable());
         assertEquals(0L, resp.getTotalRequests());
+    }
+
+    // --- Cache-only read (getDashboard) -----------------------------------
+
+    @Test
+    void getDashboard_cacheHit_returnsCachedPayloadWithoutQueryingLangfuse() {
+        AiMetricsResponse cached = AiMetricsResponse.builder()
+                .configured(true).dataAvailable(true).totalRequests(42L).build();
+        Cache.ValueWrapper wrapper = mock(Cache.ValueWrapper.class);
+        when(wrapper.get()).thenReturn(cached);
+        when(cacheManager.getCache("aiMetrics")).thenReturn(aiMetricsCache);
+        when(aiMetricsCache.get(AiMetricsServiceImpl.LATEST_KEY)).thenReturn(wrapper);
+
+        AiMetricsResponse resp = service.getDashboard();
+
+        assertSame(cached, resp);
+        verify(client, never()).query(any());
+        verify(client, never()).isConfigured();
+    }
+
+    @Test
+    void getDashboard_cacheMiss_returnsEmptyFailOpenWithoutQueryingLangfuse() {
+        when(cacheManager.getCache("aiMetrics")).thenReturn(aiMetricsCache);
+        when(aiMetricsCache.get(AiMetricsServiceImpl.LATEST_KEY)).thenReturn(null);
+        when(client.isConfigured()).thenReturn(true);
+
+        AiMetricsResponse resp = service.getDashboard();
+
+        assertTrue(resp.isConfigured());
+        assertFalse(resp.isDataAvailable());
+        // Never bursts the quota — the endpoint must never call Langfuse.
+        verify(client, never()).query(any());
+    }
+
+    // --- Scheduler-driven write (refreshCache / refreshCacheIfCold) -------
+
+    @Test
+    void refreshCache_configured_fansOutAndStoresUnderLatestKey() {
+        when(client.isConfigured()).thenReturn(true);
+        when(client.query(anyMap())).thenAnswer(inv -> fixtureFor(inv.getArgument(0)));
+        when(cacheManager.getCache("aiMetrics")).thenReturn(aiMetricsCache);
+
+        service.refreshCache();
+
+        // 15 Langfuse queries fanned out, then persisted under the stable cache key.
+        verify(client, times(15)).query(anyMap());
+        ArgumentCaptor<AiMetricsResponse> captor = ArgumentCaptor.forClass(AiMetricsResponse.class);
+        verify(aiMetricsCache).put(eq(AiMetricsServiceImpl.LATEST_KEY), captor.capture());
+        AiMetricsResponse stored = captor.getValue();
+        assertTrue(stored.isConfigured());
+        assertTrue(stored.isDataAvailable());
+        assertEquals(25L, stored.getTotalRequests());
+    }
+
+    @Test
+    void refreshCache_unconfigured_storesEmptyPayloadWithoutQuerying() {
+        when(client.isConfigured()).thenReturn(false);
+        when(cacheManager.getCache("aiMetrics")).thenReturn(aiMetricsCache);
+
+        service.refreshCache();
+
+        verify(client, never()).query(any());
+        ArgumentCaptor<AiMetricsResponse> captor = ArgumentCaptor.forClass(AiMetricsResponse.class);
+        verify(aiMetricsCache).put(eq(AiMetricsServiceImpl.LATEST_KEY), captor.capture());
+        assertFalse(captor.getValue().isConfigured());
+        assertFalse(captor.getValue().isDataAvailable());
+    }
+
+    @Test
+    void refreshCacheIfCold_warmCache_doesNotRefresh() {
+        Cache.ValueWrapper wrapper = mock(Cache.ValueWrapper.class);
+        when(cacheManager.getCache("aiMetrics")).thenReturn(aiMetricsCache);
+        when(aiMetricsCache.get(AiMetricsServiceImpl.LATEST_KEY)).thenReturn(wrapper);
+
+        service.refreshCacheIfCold();
+
+        // A warm cache surviving a restart must NOT add a 7th Langfuse burst.
+        verify(client, never()).isConfigured();
+        verify(client, never()).query(any());
+        verify(aiMetricsCache, never()).put(any(), any());
+    }
+
+    @Test
+    void refreshCacheIfCold_coldCache_triggersRefresh() {
+        when(cacheManager.getCache("aiMetrics")).thenReturn(aiMetricsCache);
+        when(aiMetricsCache.get(AiMetricsServiceImpl.LATEST_KEY)).thenReturn(null);
+        when(client.isConfigured()).thenReturn(false); // cheap refresh path
+
+        service.refreshCacheIfCold();
+
+        verify(aiMetricsCache).put(eq(AiMetricsServiceImpl.LATEST_KEY), any());
     }
 
     // --- Fixture dispatcher -------------------------------------------------

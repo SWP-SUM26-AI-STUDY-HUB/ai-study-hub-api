@@ -48,7 +48,7 @@ Step 3: Redirect the user back to the Landing Page.
 
 Step 1: User enters the Email that needs password recovery on the "Forgot password" screen.
 
-Step 2: System checks whether the Email exists. If it does, generate a reset token (UUID) stored at Redis key `otp:reset:<uuid>`, **TTL 900 seconds (15 minutes)** (same `otp:` prefix as the registration OTP), and send a reset link with the token via Email.
+Step 2: System checks whether the Email exists. If it does, generate a reset token (UUID), store it at Redis key `reset_token:<email>` (**own `reset_token:` prefix**, separate from the registration OTP `otp:<email>` key; the token UUID is the stored value, the email is the key), **TTL 900 seconds (15 minutes)**, and send a reset link carrying the token (and the email) via Email.
 
 Step 3: User clicks the Link in the Email and enters a new password on the interface.
 
@@ -231,7 +231,7 @@ PART 4: AI CHATBOT SUBSYSTEM (RAG ARCHITECTURE)
 
 Step 1: User opens the My Documents page, selects one or more specific documents as the background dataset (Context Window), then enters a question in the chat box (`POST /chat`).
 
-Step 2: [AI Guard Middleware] Backend checks the daily AI quota via Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}`. If it has exceeded the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **500/day**) → **HTTP 429**, the counter **does not increase**.
+Step 2: [AI Guard Middleware] Backend checks the daily AI quota via Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}`. If it has exceeded the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **60/day**) → **HTTP 429**, the counter **does not increase**.
 
 Step 3: If quota remains, System `INCR`s the Redis counter (if the key is newly created → set TTL **24h = 86400 seconds**), checks / creates a ChatSession in `chat_sessions`, and saves the list of selected documents into `session_documents`.
 
@@ -269,7 +269,7 @@ Step 4: User can rename the conversation title (`PATCH /chat/sessions/{id}`) or 
 
 Step 1: User selects a specific document (`COMPLETED`, with access permission) and clicks "Generate Quiz" or "Generate Flashcard" (`POST /study-materials/quiz`, `POST /study-materials/flashcard`).
 
-Step 2: [AI Guard Middleware] Check the daily AI quota — **shared with chat** (same Redis counter `user:ai_limit:{userId}:{date}`, FREE 15/day, Premium 500/day). System **INCRs before calling RAG**; if over the limit → **HTTP 429**, do not generate.
+Step 2: [AI Guard Middleware] Check the daily AI quota — **shared with chat** (same Redis counter `user:ai_limit:{userId}:{date}`, FREE 15/day, Premium 60/day). System **INCRs before calling RAG**; if over the limit → **HTTP 429**, do not generate.
 
 Step 3: System calls RAG service `/quiz/generate` or `/flashcard/generate` with `document_id`. RAG reads the document's chunks and uses the LLM to generate a set of questions/cards.
 
@@ -326,7 +326,7 @@ Step 5 (Triage 3 zones):
 
 Step 6 (Error handling / DLQ): Text-moderation fail → propagate (message unacked → retry). After **5** failures → push to **DLQ**. Image-flow fail → defer to PENDING. Skip (keep PENDING) when `openai.api-key` is empty / `mock_key` or chunks are empty.
 
-Step 7 (PEL reclaim): A scheduled job (60-second cycle) reclaims idle messages in the stream (Pending Entry List) for another consumer to process again.
+Step 7 (PEL reclaim): A scheduled job **scans every 60 seconds** (`reclaim.fixed-delay-ms`) and re-claims entries in the stream's Pending Entry List (PEL) that have been **idle for more than 5 minutes** (`reclaim.min-idle-ms` = 300 000), so another consumer can reprocess them. The 5-minute idle floor avoids stealing messages that are still being processed in-flight.
 
 26. Handle Document Reports (Handle violation reports)
 
@@ -399,14 +399,14 @@ Step 3: Backend runs `INCR` on that key in Redis:
 - Case 1 (First request on a new day): The key does not exist → Redis automatically creates the key with value 1. Backend immediately sets TTL **24h (= 86400 seconds)** for this key.
 - Case 2 (Subsequent requests): The key exists → Redis adds up to 2, 3, 4... and returns the current count.
 
-Step 4: Backend compares the returned count with the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **500/day**):
+Step 4: Backend compares the returned count with the `max_ai_requests_per_day` of the plan (FREE **15/day**, Premium **60/day**):
 
 - If **over the limit** → block the request, **HTTP 429**, do not send to the LLM, **counter rollback (does not increase)**, return the message "You have run out of AI turns for today, please upgrade your plan".
 - If within the limit → allow it to continue, forwarding the question to ChatbotService to handle RAG.
 
 Step 5: Client views the remaining quota via `GET /chat/quota`. When the day ends, the key auto-expires by TTL → "reset" lazily; no midnight cron is needed.
 
-Step 6 (Background sync — optional): The system may run a periodic Background Worker to sync the count from Redis to `ai_requests_today` in the DB to keep logs/statistics for the Admin, without ever blocking the User's main flow.
+Step 6 (No DB sync): The quota counter lives **only in Redis** — there is no `ai_requests_today` column and no background DB-sync worker; the daily usage shown to the user/Admin is read directly from the Redis key via `GET /chat/quota`.
 
 32. Check Subscription plan expiration (Scheduler + Lazy Downgrade)
 
