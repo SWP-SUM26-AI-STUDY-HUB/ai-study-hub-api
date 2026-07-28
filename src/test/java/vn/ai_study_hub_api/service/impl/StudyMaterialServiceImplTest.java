@@ -247,6 +247,52 @@ class StudyMaterialServiceImplTest {
     }
 
     // ------------------------------------------------------------------
+    // Document not ready (processing / failed): refuse WITHOUT charging quota or calling RAG
+    // ------------------------------------------------------------------
+
+    @Test
+    void generateQuiz_documentStillProcessing_returnsEmptyList_noQuotaNoRag() {
+        ownedDocument.setStatus(DocumentStatus.PROCESSING);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(ownedDocument));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(aiQuotaService.getUsage(userId)).thenReturn(new AiQuotaService.QuotaInfo(3, 10, 7));
+
+        StudyMaterialService.Outcome<QuizGenerateResponse> outcome =
+                studyMaterialService.generateQuiz(request(documentId, 10, null, null), userId);
+
+        assertTrue(outcome.refused(), "not-ready should surface as a refusal");
+        assertEquals("Tài liệu đang được xử lý, vui lòng đợi trong giây lát rồi thử lại.",
+                outcome.message());
+        assertTrue(outcome.body().getQuiz().isEmpty());
+        assertNotNull(outcome.body().getSessionId());
+        assertEquals(7, outcome.body().getRemainingRequests());
+        assertEquals(10, outcome.body().getDailyLimit());
+
+        // No RAG call and no quota charged for a still-processing document.
+        verify(studyMaterialClient, never()).generateQuiz(any(), any(), any());
+        verify(aiQuotaService, never()).checkAndIncrement(any());
+        verify(chatMessageRepository, times(2)).save(any(ChatMessageEntity.class));
+    }
+
+    @Test
+    void generateFlashcard_documentFailed_returnsEmptyList_noQuotaNoRag() {
+        ownedDocument.setStatus(DocumentStatus.FAILED);
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(ownedDocument));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(aiQuotaService.getUsage(userId)).thenReturn(new AiQuotaService.QuotaInfo(0, 10, 10));
+
+        StudyMaterialService.Outcome<FlashcardGenerateResponse> outcome =
+                studyMaterialService.generateFlashcard(request(documentId, 15, null, null), userId);
+
+        assertTrue(outcome.refused());
+        assertEquals("Tài liệu xử lý thất bại. Vui lòng tải lại tài liệu rồi thử lại.",
+                outcome.message());
+        assertTrue(outcome.body().getFlashcards().isEmpty());
+        verify(studyMaterialClient, never()).generateFlashcard(any(), any(), any());
+        verify(aiQuotaService, never()).checkAndIncrement(any());
+    }
+
+    // ------------------------------------------------------------------
     // Access / validation guards (must run before any persistence)
     // ------------------------------------------------------------------
 
@@ -258,7 +304,6 @@ class StudyMaterialServiceImplTest {
                 .status(DocumentStatus.COMPLETED)
                 .visibility(DocumentVisibility.PRIVATE) // not owner + not public → FORBIDDEN
                 .build();
-        when(aiQuotaService.checkAndIncrement(userId)).thenReturn(new AiQuotaService.QuotaInfo(1, 10, 9));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(others));
 
         AppException ex = assertThrows(AppException.class,
@@ -271,7 +316,6 @@ class StudyMaterialServiceImplTest {
     @Test
     void generateQuiz_deletedDocument_notFound() {
         ownedDocument.setStatus(DocumentStatus.DELETED);
-        when(aiQuotaService.checkAndIncrement(userId)).thenReturn(new AiQuotaService.QuotaInfo(1, 10, 9));
         when(documentRepository.findById(documentId)).thenReturn(Optional.of(ownedDocument));
 
         AppException ex = assertThrows(AppException.class,
