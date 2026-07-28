@@ -188,13 +188,13 @@ For testing edge cases related to permissions and storage limits. These limits a
 ### 5. Forgot Password Recovery (F-AUTH-05)
 
 > [!NOTE]
-> Reset-password tokens are stored in Redis under key `otp:reset:<uuid>` with a **900-second (15-minute)** TTL.
+> Reset-password tokens are stored in Redis under key `reset_token:<email>` (own `reset_token:` prefix, separate from the registration-OTP `otp:<email>` key; the token UUID is the stored value, looked up by email) with a **900-second (15-minute)** TTL.
 
 #### Scenario 1: Successful password reset request (Happy Path)
 - **Given** The user does not remember their password and is on the "Forgot Password" page.
 - **When** The user enters their registered Email address and clicks "Submit" (`POST /api/v1/auth/forgot-password`).
 - **Then** The system confirms the email exists in the database.
-- **And** The system generates a temporary password-reset token stored in Redis (`otp:reset:<uuid>`) with a **900-second** TTL.
+- **And** The system generates a temporary password-reset token (UUID) stored in Redis under key `reset_token:<email>` with a **900-second** TTL.
 - **And** The system sends an email containing a unique reset URL with the token (e.g., `/reset-password?token=xxxx`).
 - **And** The system displays the message: "A password reset link has been sent to your email".
 

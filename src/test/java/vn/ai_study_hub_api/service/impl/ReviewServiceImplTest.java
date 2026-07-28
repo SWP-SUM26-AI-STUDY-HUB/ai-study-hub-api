@@ -91,7 +91,7 @@ public class ReviewServiceImplTest {
         verify(notificationRepository).save(captor.capture());
 
         NotificationEntity notification = captor.getValue();
-        assertEquals("Bạn nhận được đánh giá mới", notification.getTitle());
+        assertEquals("New Review Received", notification.getTitle());
         assertEquals(uploader, notification.getUser());
         assertEquals("NEW_REVIEW", notification.getType());
         assertEquals(documentId.toString(), notification.getTargetId());
@@ -192,6 +192,6 @@ public class ReviewServiceImplTest {
         verify(notificationRepository).save(captor.capture());
 
         NotificationEntity notification = captor.getValue();
-        assertFalse(notification.getContent().contains("Nhận xét"));
+        assertFalse(notification.getContent().contains("Comment"));
     }
 }

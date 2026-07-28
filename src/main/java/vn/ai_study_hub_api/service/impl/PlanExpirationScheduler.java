@@ -25,7 +25,7 @@ public class PlanExpirationScheduler {
     private final NotificationRepository notificationRepository;
     private final StoragePlanRepository storagePlanRepository;
 
-    private static final String EXPIRATION_NOTIFICATION_TITLE = "Gói cước sắp hết hạn";
+    private static final String EXPIRATION_NOTIFICATION_TITLE = "Storage Plan Expiring Soon";
 
     @Scheduled(cron = "0 0 8 * * *")
     @Transactional
@@ -58,7 +58,7 @@ public class PlanExpirationScheduler {
 
             String planName = resolvePlanName(user.getPlanId());
             String content = String.format(
-                    "Gói %s của bạn sẽ hết hạn vào ngày %s. Vui lòng gia hạn để tránh tài liệu bị khóa.",
+                    "Your %s plan will expire on %s. Please renew to avoid your documents being locked.",
                     planName,
                     user.getPlanExpiresAt().toLocalDate()
             );

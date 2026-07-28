@@ -48,7 +48,7 @@ Step 3: Redirect the user back to the Landing Page.
 
 Step 1: User enters the Email that needs password recovery on the "Forgot password" screen.
 
-Step 2: System checks whether the Email exists. If it does, generate a reset token (UUID) stored at Redis key `otp:reset:<uuid>`, **TTL 900 seconds (15 minutes)** (same `otp:` prefix as the registration OTP), and send a reset link with the token via Email.
+Step 2: System checks whether the Email exists. If it does, generate a reset token (UUID), store it at Redis key `reset_token:<email>` (**own `reset_token:` prefix**, separate from the registration OTP `otp:<email>` key; the token UUID is the stored value, the email is the key), **TTL 900 seconds (15 minutes)**, and send a reset link carrying the token (and the email) via Email.
 
 Step 3: User clicks the Link in the Email and enters a new password on the interface.
 
@@ -326,7 +326,7 @@ Step 5 (Triage 3 zones):
 
 Step 6 (Error handling / DLQ): Text-moderation fail → propagate (message unacked → retry). After **5** failures → push to **DLQ**. Image-flow fail → defer to PENDING. Skip (keep PENDING) when `openai.api-key` is empty / `mock_key` or chunks are empty.
 
-Step 7 (PEL reclaim): A scheduled job (60-second cycle) reclaims idle messages in the stream (Pending Entry List) for another consumer to process again.
+Step 7 (PEL reclaim): A scheduled job **scans every 60 seconds** (`reclaim.fixed-delay-ms`) and re-claims entries in the stream's Pending Entry List (PEL) that have been **idle for more than 5 minutes** (`reclaim.min-idle-ms` = 300 000), so another consumer can reprocess them. The 5-minute idle floor avoids stealing messages that are still being processed in-flight.
 
 26. Handle Document Reports (Handle violation reports)
 
@@ -406,7 +406,7 @@ Step 4: Backend compares the returned count with the `max_ai_requests_per_day` o
 
 Step 5: Client views the remaining quota via `GET /chat/quota`. When the day ends, the key auto-expires by TTL → "reset" lazily; no midnight cron is needed.
 
-Step 6 (Background sync — optional): The system may run a periodic Background Worker to sync the count from Redis to `ai_requests_today` in the DB to keep logs/statistics for the Admin, without ever blocking the User's main flow.
+Step 6 (No DB sync): The quota counter lives **only in Redis** — there is no `ai_requests_today` column and no background DB-sync worker; the daily usage shown to the user/Admin is read directly from the Redis key via `GET /chat/quota`.
 
 32. Check Subscription plan expiration (Scheduler + Lazy Downgrade)
 

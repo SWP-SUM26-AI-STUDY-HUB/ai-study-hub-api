@@ -35,7 +35,7 @@ Every value, enum, limit, and endpoint in this document is aligned with the proj
 
 ### 5. Forgot Password Recovery (F-AUTH-05)
 - **F-AUTH-05.1:** The system shall accept an Email Address on the password-recovery interface.
-- **F-AUTH-05.2:** The system shall verify the email's existence, generate a reset token (Redis key `otp:reset:<uuid>`, **TTL 900 s / 15 min**), and email a unique reset URL containing the token.
+- **F-AUTH-05.2:** The system shall verify the email's existence, generate a reset token (UUID) stored in Redis under key `reset_token:<email>` (own `reset_token:` prefix, **separate** from the registration-OTP `otp:<email>` key; the token UUID is the stored value and is looked up by email), **TTL 900 s / 15 min**, and email a unique reset URL containing the token (and the email).
 - **F-AUTH-05.3:** The system shall accept a new password and validation token from the reset interface.
 - **F-AUTH-05.4:** The system shall validate the token, hash the new password (bcrypt), update the password field, clear the reset token, and redirect the user to the login screen.
 
