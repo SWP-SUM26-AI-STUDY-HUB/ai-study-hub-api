@@ -79,18 +79,18 @@ public class ReviewServiceImpl implements ReviewService {
             reviewerName = reviewer.getEmail();
         }
 
-        // Gửi notification cho chủ document
+        // Send notification to document owner
         UserEntity uploader = document.getUploader();
         if (uploader != null && !uploader.getId().equals(userId)) {
-            String notifContent = String.format("%s đã đánh giá %d⭐ cho tài liệu '%s'",
+            String notifContent = String.format("%s left a %d⭐ rating for your document '%s'",
                     reviewerName, request.getRating(), document.getTitle());
             if (request.getComment() != null && !request.getComment().isBlank()) {
-                notifContent += String.format(". Nhận xét: %s", request.getComment());
+                notifContent += String.format(". Comment: %s", request.getComment());
             }
 
             NotificationEntity notification = NotificationEntity.builder()
                     .user(uploader)
-                    .title("Bạn nhận được đánh giá mới")
+                    .title("New Review Received")
                     .content(notifContent)
                     .type("NEW_REVIEW")
                     .targetId(documentId.toString())
