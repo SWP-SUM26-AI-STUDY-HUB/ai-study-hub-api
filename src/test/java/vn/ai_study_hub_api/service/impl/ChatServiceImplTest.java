@@ -153,7 +153,6 @@ class ChatServiceImplTest {
 
     @Test
     void chat_documentNotAccessible_forbidden() {
-        when(aiQuotaService.checkAndIncrement(userId)).thenReturn(new AiQuotaService.QuotaInfo(1, 15, 14));
         UUID otherUser = UUID.randomUUID();
         DocumentEntity foreignDoc = DocumentEntity.builder()
                 .id(documentId)
@@ -168,6 +167,55 @@ class ChatServiceImplTest {
 
         assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
         verify(chatbotClient, never()).chat(anyString(), any(), any(), anyList());
+    }
+
+    @Test
+    void chat_documentStillProcessing_returnsNotReadyMessage_noQuotaNoChatbot() {
+        DocumentEntity processingDoc = DocumentEntity.builder()
+                .id(documentId)
+                .uploader(mockUser)
+                .status(DocumentStatus.PROCESSING)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(processingDoc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(aiQuotaService.getUsage(userId)).thenReturn(new AiQuotaService.QuotaInfo(3, 15, 12));
+
+        ChatResponse response = chatService.chat(request("What is X?", documentId, null), userId);
+
+        assertEquals(
+                "Tài liệu đang được xử lý, vui lòng đợi trong giây lát rồi gửi lại câu hỏi nhé.",
+                response.getAnswer());
+        assertTrue(response.getCitations().isEmpty());
+        assertNotNull(response.getSessionId());
+        assertEquals(12, response.getRemainingRequests());
+        assertEquals(15, response.getDailyLimit());
+
+        // Still-processing doc: no LLM/RAG call and no quota charged.
+        verify(chatbotClient, never()).chat(anyString(), any(), any(), anyList());
+        verify(aiQuotaService, never()).checkAndIncrement(any());
+        verify(chatMessageRepository, times(2)).save(any());
+    }
+
+    @Test
+    void chat_documentFailed_returnsFailureMessage() {
+        DocumentEntity failedDoc = DocumentEntity.builder()
+                .id(documentId)
+                .uploader(mockUser)
+                .status(DocumentStatus.FAILED)
+                .visibility(DocumentVisibility.PRIVATE)
+                .build();
+        when(documentRepository.findById(documentId)).thenReturn(Optional.of(failedDoc));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(mockUser));
+        when(aiQuotaService.getUsage(userId)).thenReturn(new AiQuotaService.QuotaInfo(0, 15, 15));
+
+        ChatResponse response = chatService.chat(request("q", documentId, null), userId);
+
+        assertEquals(
+                "Tài liệu xử lý thất bại nên chưa thể trò chuyện. Vui lòng tải lại tài liệu rồi thử lại.",
+                response.getAnswer());
+        verify(chatbotClient, never()).chat(anyString(), any(), any(), anyList());
+        verify(aiQuotaService, never()).checkAndIncrement(any());
     }
 
     @Test

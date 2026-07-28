@@ -69,14 +69,20 @@ public class ChatServiceImpl implements ChatService {
         }
         String query = req.getQuery().trim();
 
-        // 1. AI Guard: enforce daily quota BEFORE calling the chatbot.
-        AiQuotaService.QuotaInfo quota = aiQuotaService.checkAndIncrement(userId);
-
-        // 2. Validate document access (if a specific document was selected).
+        // 1. Validate document access + readiness BEFORE charging the daily quota. A
+        //    document that hasn't finished processing (chunks/embeddings not indexed yet)
+        //    makes the chatbot silently retrieve nothing, so we reply with a clear message
+        //    instead — without consuming the quota.
         DocumentEntity document = null;
         if (req.getDocumentId() != null) {
             document = loadAccessibleDocument(req.getDocumentId(), userId);
         }
+        if (document != null && !DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            return documentNotReadyResponse(req, userId, query, document);
+        }
+
+        // 2. AI Guard: enforce daily quota BEFORE calling the chatbot.
+        AiQuotaService.QuotaInfo quota = aiQuotaService.checkAndIncrement(userId);
 
         // 3. Resolve or create the chat session.
         ChatSessionEntity session = resolveSession(req.getSessionId(), userId, query);
@@ -257,6 +263,54 @@ public class ChatServiceImpl implements ChatService {
             throw new AppException(HttpStatus.FORBIDDEN, "You do not have access to this document");
         }
         return document;
+    }
+
+    /**
+     * Reply (instead of calling the chatbot) when the selected document hasn't finished
+     * processing yet: RAG retrieval would be empty, so we return a clear message. The user
+     * question and the bot's readiness reply are persisted into a session (consistent with a
+     * normal turn), but the daily AI quota is NOT charged (no LLM/RAG call was made).
+     */
+    private ChatResponse documentNotReadyResponse(ChatRequest req, UUID userId, String query, DocumentEntity document) {
+        ChatSessionEntity session = resolveSession(req.getSessionId(), userId, query);
+        if (!session.getDocuments().contains(document)) {
+            session.getDocuments().add(document);
+        }
+        session = chatSessionRepository.save(session);
+
+        chatMessageRepository.save(ChatMessageEntity.builder()
+                .id(UUID.randomUUID())
+                .session(session)
+                .sender(MessageSender.USER)
+                .content(query)
+                .build());
+
+        String answer = documentNotReadyMessage(document.getStatus());
+        chatMessageRepository.save(ChatMessageEntity.builder()
+                .id(UUID.randomUUID())
+                .session(session)
+                .sender(MessageSender.BOT)
+                .content(answer)
+                .build());
+
+        AiQuotaService.QuotaInfo usage = aiQuotaService.getUsage(userId);
+        return ChatResponse.builder()
+                .sessionId(session.getId())
+                .sessionTitle(session.getTitle())
+                .answer(answer)
+                .citations(List.of())
+                .remainingRequests(usage.remaining())
+                .dailyLimit(usage.dailyLimit())
+                .build();
+    }
+
+    private String documentNotReadyMessage(DocumentStatus status) {
+        return switch (status) {
+            case FAILED -> "Tài liệu xử lý thất bại nên chưa thể trò chuyện. Vui lòng tải lại tài liệu rồi thử lại.";
+            case REJECTED -> "Tài liệu đã bị từ chối nên không thể trò chuyện.";
+            // UPLOADING / PROCESSING / PENDING — chunks/embeddings aren't ready yet.
+            default -> "Tài liệu đang được xử lý, vui lòng đợi trong giây lát rồi gửi lại câu hỏi nhé.";
+        };
     }
 
     private List<CitationView> extractCitations(JsonNode debug) {
