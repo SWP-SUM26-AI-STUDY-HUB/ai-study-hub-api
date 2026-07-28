@@ -41,11 +41,11 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
            "WHERE d.visibility = :visibility " +
            "AND d.status = :status " +
            "AND d.deletedAt IS NULL " +
-           "AND (function('unaccent', LOWER(d.title)) LIKE function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) " +
-           "  OR function('unaccent', LOWER(d.description)) LIKE function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) " +
-           "  OR function('unaccent', LOWER(d.summary)) LIKE function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) " +
+           "AND (CAST(function('unaccent', LOWER(d.title)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
+           "  OR CAST(function('unaccent', LOWER(d.description)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
+           "  OR CAST(function('unaccent', LOWER(d.summary)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
            "  OR ((t.visibility IS NULL OR t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC) " +
-           "      AND function('unaccent', LOWER(t.label)) LIKE function('unaccent', LOWER(CONCAT('%', :keyword, '%')))))")
+           "      AND CAST(function('unaccent', LOWER(t.label)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string)))")
     List<DocumentEntity> searchPublicDocuments(
             @Param("keyword") String keyword,
             @Param("visibility") DocumentVisibility visibility,
