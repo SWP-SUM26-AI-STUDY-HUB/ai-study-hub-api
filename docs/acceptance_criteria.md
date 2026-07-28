@@ -23,7 +23,7 @@ For testing edge cases related to permissions and storage limits. These limits a
 | Feature / Limit | Free Plan (Default, plan id = 1) | Premium Plan |
 | :--- | :--- | :--- |
 | **Max Cloud Storage** | **2 GB** | **10 GB** |
-| **Daily AI Request Limit** (shared counter: chat + quiz + flashcard) | **15 / day** | **500 / day** |
+| **Daily AI Request Limit** (shared counter: chat + quiz + flashcard) | **15 / day** | **60 / day** |
 | **Allowed File Formats** | `.pdf`, `.docx`, `.txt`, `.md` | `.pdf`, `.docx`, `.txt`, `.md` |
 | **Max File Upload Size** | **50 MB** (`52428800` bytes) | **50 MB** (`52428800` bytes) |
 | JWT access / refresh token | 1 hour / 7 days | 1 hour / 7 days |
@@ -188,13 +188,13 @@ For testing edge cases related to permissions and storage limits. These limits a
 ### 5. Forgot Password Recovery (F-AUTH-05)
 
 > [!NOTE]
-> Reset-password tokens are stored in Redis under key `otp:reset:<uuid>` with a **900-second (15-minute)** TTL.
+> Reset-password tokens are stored in Redis under key `reset_token:<email>` (own `reset_token:` prefix, separate from the registration-OTP `otp:<email>` key; the token UUID is the stored value, looked up by email) with a **900-second (15-minute)** TTL.
 
 #### Scenario 1: Successful password reset request (Happy Path)
 - **Given** The user does not remember their password and is on the "Forgot Password" page.
 - **When** The user enters their registered Email address and clicks "Submit" (`POST /api/v1/auth/forgot-password`).
 - **Then** The system confirms the email exists in the database.
-- **And** The system generates a temporary password-reset token stored in Redis (`otp:reset:<uuid>`) with a **900-second** TTL.
+- **And** The system generates a temporary password-reset token (UUID) stored in Redis under key `reset_token:<email>` with a **900-second** TTL.
 - **And** The system sends an email containing a unique reset URL with the token (e.g., `/reset-password?token=xxxx`).
 - **And** The system displays the message: "A password reset link has been sent to your email".
 
@@ -635,7 +635,7 @@ For testing edge cases related to permissions and storage limits. These limits a
 > The AI Guard intercepts chat requests and enforces the plan's **daily AI quota** (shared across chat + quiz + flashcard). Quota is tracked atomically in Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}` via `INCR` with a 24 h TTL set on first use. Overflow returns **HTTP 429**, makes **no LLM call**, and does **not** increment the counter.
 
 #### Scenario 1: Multi-document chat within quota (Happy Path)
-- **Given** The user is Premium, and has used 10 out of their 500 daily AI requests.
+- **Given** The user is Premium, and has used 10 out of their 60 daily AI requests.
 - **When** The user selects `macroeconomics.pdf` and `exam_notes.docx` and enters the query `"Compare demand-pull and cost-push inflation?"` (`POST /api/v1/chat`, no session ID provided).
 - **Then** The AI Guard middleware verifies the Redis counter is within quota.
 - **And** The system initializes a new Chat Session.

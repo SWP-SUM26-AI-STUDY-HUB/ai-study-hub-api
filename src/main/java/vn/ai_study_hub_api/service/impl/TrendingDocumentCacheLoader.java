@@ -42,20 +42,13 @@ public class TrendingDocumentCacheLoader {
 
     private final TrendingDocumentRepository trendingDocumentRepository;
 
-    @Cacheable(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS,
-            key = "#pageable.pageNumber + ':' + #pageable.pageSize")
+    @Cacheable(cacheNames = CacheConfig.CACHE_TRENDING_DOCUMENTS)
     @Transactional(readOnly = true)
-    public TrendingPage loadTrendingPage(Pageable pageable) {
-        Page<DocumentEntity> documentsPage = trendingDocumentRepository.findTrendingDocuments(pageable);
-        List<DocumentEntity> documents = documentsPage.getContent();
+    public List<TrendingDocumentResponse> loadTrendingDocuments() {
+        List<DocumentEntity> documents = trendingDocumentRepository.findTrendingDocuments(org.springframework.data.domain.PageRequest.of(0, 5));
 
         if (documents.isEmpty()) {
-            return TrendingPage.builder()
-                    .content(Collections.emptyList())
-                    .totalElements(documentsPage.getTotalElements())
-                    .pageNumber(pageable.getPageNumber())
-                    .pageSize(pageable.getPageSize())
-                    .build();
+            return Collections.emptyList();
         }
 
         List<UUID> docIds = documents.stream().map(DocumentEntity::getId).collect(Collectors.toList());
@@ -63,7 +56,7 @@ public class TrendingDocumentCacheLoader {
                 .stream()
                 .collect(Collectors.toMap(TrendingStatsProjection::getDocumentId, stats -> stats));
 
-        List<TrendingDocumentResponse> content = documents.stream().map(doc -> {
+        return documents.stream().map(doc -> {
             TrendingStatsProjection stats = statsMap.get(doc.getId());
             Double avgRating = stats != null ? stats.getAverageRating() : 0.0;
             Long reviewCount = stats != null ? stats.getReviewCount() : 0L;
@@ -109,12 +102,5 @@ public class TrendingDocumentCacheLoader {
                     .downloadCount(doc.getDownloadCount())
                     .build();
         }).collect(Collectors.toList());
-
-        return TrendingPage.builder()
-                .content(content)
-                .totalElements(documentsPage.getTotalElements())
-                .pageNumber(pageable.getPageNumber())
-                .pageSize(pageable.getPageSize())
-                .build();
     }
 }

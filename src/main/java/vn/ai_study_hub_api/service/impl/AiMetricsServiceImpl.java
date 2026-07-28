@@ -2,7 +2,8 @@ package vn.ai_study_hub_api.service.impl;
 
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 import vn.ai_study_hub_api.config.CacheConfig;
@@ -13,6 +14,7 @@ import vn.ai_study_hub_api.service.AiMetricsService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,27 +25,39 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 /**
- * Builds the admin AI/RAG dashboard payload by fanning out the Langfuse Metrics API v2
- * queries ({@code docs/langfuse-metrics-cookbook.md} §3.1–3.10) in parallel and assembling
- * one {@link AiMetricsResponse}.
+ * Builds + serves the admin AI/RAG dashboard payload from the Langfuse Metrics API v2
+ * ({@code docs/langfuse-metrics-cookbook.md} §3.1–3.10).
  *
- * <h3>Design</h3>
+ * <h3>Budget model (Langfuse Cloud Hobby plan = 100 Metrics API v2 requests/day)</h3>
+ * <ul>
+ *   <li><b>Writes only via {@link #refreshCache()}</b> — called by
+ *   {@code AiMetricsRefreshScheduler} 6×/day (06:00–21:00 Asia/Ho_Chi_Minh, every 3h).
+ *   Each refresh fans out 15 Langfuse queries in parallel → 6 × 15 = 90 requests/day,
+ *   leaving 10 of headroom.</li>
+ *   <li><b>Reads via {@link #getDashboard()}</b> — a cache-only lookup under the single
+ *   key {@link #LATEST_KEY}. <strong>Never calls Langfuse</strong>, so admin refresh
+ *   storms cannot burst the daily quota. A cold cache serves an all-empty fail-open
+ *   payload (never a 5xx).</li>
+ * </ul>
+ *
+ * <h3>Fan-out internals</h3>
  * <ul>
  *   <li><b>Parallel fan-out</b> — every widget query runs on its own virtual thread
  *   ({@link Executors#newVirtualThreadPerTaskExecutor()}). 15 round-trips collapse to
  *   ≈ the slowest single call (≤ the client's 10s timeout), instead of 15×1–3s sequential.</li>
  *   <li><b>Fail-open per widget</b> — {@link #async(String, Supplier, Object)} catches every
- *   failure and resolves to the widget's fallback. The Langfuse client additionally fails open
- *   on transport/auth/timeout, so {@code .join()} never throws.</li>
- *   <li><b>Redis-cached</b> — {@code @Cacheable("aiMetrics")} (5m TTL) so the dashboard does
- *   not hammer the Langfuse free-tier rate limit. Cache key = the ISO time window.</li>
+ *   failure and resolves to the widget's fallback. The Langfuse client additionally fails
+ *   open on transport/auth/timeout, so {@code .join()} never throws.</li>
  *   <li><b>Unconfigured → empty</b> — when no Langfuse keys are set, returns an all-empty
  *   payload immediately (no threads spawned, no calls attempted).</li>
  * </ul>
  *
- * <p>The {@code @Cacheable} annotation is proxy-based and therefore inert under pure-Mockito
- * unit tests (no Spring context) — caching is verified structurally; the parallel orchestration
- * is exercised directly with a synchronous executor.
+ * <p>Cache I/O is manual ({@link CacheManager}) rather than {@code @Cacheable} so the
+ * read path can distinguish "serve cached" from "compute" — the endpoint must never
+ * trigger the 15-query fan-out.
+ *
+ * <p>Caching behavior is verified structurally; the parallel orchestration is exercised
+ * directly with a synchronous executor in {@code AiMetricsServiceImplTest}.
  */
 @Service
 @Slf4j
@@ -53,7 +67,14 @@ public class AiMetricsServiceImpl implements AiMetricsService {
     private static final List<String> ROUTES =
             List.of("qa", "smalltalk", "summary", "guardrail_block", "quiz", "flashcard");
 
+    /** Default dashboard window: rolling last N days from "now" (UTC). */
+    private static final long DEFAULT_WINDOW_DAYS = 7;
+
+    /** Single cache key — there is only ever one "latest" dashboard payload. */
+    static final String LATEST_KEY = "latest";
+
     private final LangfuseMetricsClient client;
+    private final CacheManager cacheManager;
 
     /**
      * Process-wide virtual-thread executor dedicated to fanning out Langfuse queries.
@@ -62,8 +83,9 @@ public class AiMetricsServiceImpl implements AiMetricsService {
      */
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public AiMetricsServiceImpl(LangfuseMetricsClient client) {
+    public AiMetricsServiceImpl(LangfuseMetricsClient client, CacheManager cacheManager) {
         this.client = client;
+        this.cacheManager = cacheManager;
     }
 
     @PreDestroy
@@ -71,9 +93,64 @@ public class AiMetricsServiceImpl implements AiMetricsService {
         executor.shutdown();
     }
 
+    // --- Cache-only read (endpoint) ---------------------------------------
+
     @Override
-    @Cacheable(value = CacheConfig.CACHE_AI_METRICS, key = "#fromTs + ':' + #toTs")
-    public AiMetricsResponse getAiMetrics(String fromTs, String toTs) {
+    public AiMetricsResponse getDashboard() {
+        Cache cache = aiMetricsCache();
+        if (cache != null) {
+            Cache.ValueWrapper wrapper = cache.get(LATEST_KEY);
+            if (wrapper != null && wrapper.get() instanceof AiMetricsResponse cached) {
+                return cached;
+            }
+        }
+        // Cold cache (before first scheduled fire / after Redis flush) — fail open without
+        // touching Langfuse. The default window is stamped so the UI labels stay sane.
+        String[] window = defaultWindow();
+        return AiMetricsResponse.empty(window[0], window[1], client.isConfigured());
+    }
+
+    // --- Scheduler-driven write -------------------------------------------
+
+    @Override
+    public void refreshCache() {
+        String[] window = defaultWindow();
+        AiMetricsResponse result;
+        if (!client.isConfigured()) {
+            result = AiMetricsResponse.empty(window[0], window[1], false);
+        } else {
+            try {
+                result = computeMetrics(window[0], window[1]);
+            } catch (Throwable t) {
+                // Per-widget failures already fail-open inside computeMetrics; this guards
+                // anything structural so a refresh never throws into the scheduler thread.
+                log.warn("AI metrics refresh failed: {}", t.toString());
+                result = AiMetricsResponse.empty(window[0], window[1], true);
+            }
+        }
+        putCache(result);
+        log.info("AI metrics cache refreshed (configured={}, dataAvailable={}).",
+                result.isConfigured(), result.isDataAvailable());
+    }
+
+    @Override
+    public void refreshCacheIfCold() {
+        Cache cache = aiMetricsCache();
+        if (cache != null && cache.get(LATEST_KEY) != null) {
+            return; // warm — a redeploy with surviving Redis cache adds no Langfuse burst.
+        }
+        log.info("AI metrics cache cold on startup — refreshing.");
+        refreshCache();
+    }
+
+    // --- Fan-out (the 15-query Langfuse orchestration) --------------------
+
+    /**
+     * Builds the full AI-metrics payload for the given UTC window by fanning out the
+     * 15 Langfuse Metrics API v2 queries in parallel. Package-visible for unit tests;
+     * production callers go through {@link #refreshCache()}.
+     */
+    AiMetricsResponse computeMetrics(String fromTs, String toTs) {
         if (!client.isConfigured()) {
             return AiMetricsResponse.empty(fromTs, toTs, false);
         }
@@ -251,6 +328,42 @@ public class AiMetricsServiceImpl implements AiMetricsService {
             return 0L;
         }
         return data.get(0).path(valueField).asLong(0L);
+    }
+
+    // --- Cache + window helpers -------------------------------------------
+
+    private Cache aiMetricsCache() {
+        try {
+            return cacheManager.getCache(CacheConfig.CACHE_AI_METRICS);
+        } catch (Throwable t) {
+            log.warn("AI metrics cache lookup failed: {}", t.toString());
+            return null;
+        }
+    }
+
+    private void putCache(AiMetricsResponse result) {
+        Cache cache = aiMetricsCache();
+        if (cache == null) {
+            return;
+        }
+        try {
+            cache.put(LATEST_KEY, result);
+        } catch (Throwable t) {
+            log.warn("AI metrics cache put failed: {}", t.toString());
+        }
+    }
+
+    /** Default rolling window as ISO-8601 UTC instants: {@code [from, to]} = [now-7d, now]. */
+    private static String[] defaultWindow() {
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        return new String[]{
+                iso(now.minusDays(DEFAULT_WINDOW_DAYS)),
+                iso(now)
+        };
+    }
+
+    private static String iso(LocalDateTime t) {
+        return DateTimeFormatter.ISO_INSTANT.format(t.toInstant(ZoneOffset.UTC));
     }
 
     // --- Query payload builders --------------------------------------------

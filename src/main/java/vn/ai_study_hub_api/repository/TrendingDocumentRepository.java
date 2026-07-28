@@ -16,13 +16,11 @@ import java.util.UUID;
 public interface TrendingDocumentRepository extends JpaRepository<DocumentEntity, UUID> {
 
     @Query("SELECT d FROM DocumentEntity d " +
-            "LEFT JOIN ReviewEntity r ON d.id = r.document.id " +
             "WHERE d.visibility = vn.ai_study_hub_api.model.DocumentVisibility.PUBLIC " +
             "  AND d.status = vn.ai_study_hub_api.model.DocumentStatus.COMPLETED " +
             "  AND d.deletedAt IS NULL " +
-            "GROUP BY d.id " +
-            "ORDER BY COALESCE(AVG(r.rating), 0.0) DESC, COUNT(r.id) DESC, d.createdAt DESC")
-    Page<DocumentEntity> findTrendingDocuments(Pageable pageable);
+            "ORDER BY d.downloadCount DESC, d.createdAt DESC")
+    List<DocumentEntity> findTrendingDocuments(Pageable pageable);
 
     @Query(value = "SELECT document_id as documentId, COALESCE(AVG(rating), 0.0) as averageRating, COUNT(id) as reviewCount " +
             "FROM reviews WHERE document_id IN :documentIds GROUP BY document_id",
