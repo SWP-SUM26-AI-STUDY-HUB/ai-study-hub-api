@@ -43,7 +43,6 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
            "AND d.deletedAt IS NULL " +
            "AND (CAST(function('unaccent', LOWER(d.title)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
            "  OR CAST(function('unaccent', LOWER(d.description)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
-           "  OR CAST(function('unaccent', LOWER(d.summary)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
            "  OR ((t.visibility IS NULL OR t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC) " +
            "      AND CAST(function('unaccent', LOWER(t.label)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string)))")
     List<DocumentEntity> searchPublicDocuments(
