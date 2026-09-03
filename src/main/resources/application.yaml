@@ -125,7 +125,7 @@ app:
     trending-documents-ttl-minutes: ${APP_CACHE_TRENDING_TTL_MIN:10}
     public-tags-ttl-minutes: ${APP_CACHE_PUBLIC_TAGS_TTL_MIN:30}
     default-ttl-minutes: ${APP_CACHE_DEFAULT_TTL_MIN:5}
-    ai-metrics-ttl-minutes: ${APP_CACHE_AI_METRICS_TTL_MIN:5}
+    ai-metrics-ttl-minutes: ${APP_CACHE_AI_METRICS_TTL_MIN:720} # 12h: scheduler-driven refresh (AiMetricsRefreshScheduler 6x/day); TTL > overnight 21:00->06:00 gap so the entry never goes empty between fires
   moderation:
     # Redis Streams job queue for auto-moderation (durable replacement for @Async fire-and-forget).
     stream-key: stream:moderation

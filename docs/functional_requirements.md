@@ -35,7 +35,7 @@ Every value, enum, limit, and endpoint in this document is aligned with the proj
 
 ### 5. Forgot Password Recovery (F-AUTH-05)
 - **F-AUTH-05.1:** The system shall accept an Email Address on the password-recovery interface.
-- **F-AUTH-05.2:** The system shall verify the email's existence, generate a reset token (Redis key `otp:reset:<uuid>`, **TTL 900 s / 15 min**), and email a unique reset URL containing the token.
+- **F-AUTH-05.2:** The system shall verify the email's existence, generate a reset token (UUID) stored in Redis under key `reset_token:<email>` (own `reset_token:` prefix, **separate** from the registration-OTP `otp:<email>` key; the token UUID is the stored value and is looked up by email), **TTL 900 s / 15 min**, and email a unique reset URL containing the token (and the email).
 - **F-AUTH-05.3:** The system shall accept a new password and validation token from the reset interface.
 - **F-AUTH-05.4:** The system shall validate the token, hash the new password (bcrypt), update the password field, clear the reset token, and redirect the user to the login screen.
 
@@ -149,7 +149,7 @@ Every value, enum, limit, and endpoint in this document is aligned with the proj
 
 ### 23. Study-Material Generation (F-AI-04)
 - **F-AI-04.1:** The system shall generate **document-scoped** quizzes (`POST /study-materials/quiz`) and **flashcards** (`POST /study-materials/flashcard`) via the RAG microservice over a single specified document.
-- **F-AI-04.2:** Study-material generation counts against the **shared daily AI quota** (chat + quiz + flashcard; Free 15/day, Premium 500/day), and the quota counter is incremented **before** the RAG call is dispatched.
+- **F-AI-04.2:** Study-material generation counts against the **shared daily AI quota** (chat + quiz + flashcard; Free 15/day, Premium 60/day), and the quota counter is incremented **before** the RAG call is dispatched.
 - **F-AI-04.3:** On quota overflow, the system shall return **HTTP 429**, **not** increment the counter beyond the limit, and **not** call the RAG service.
 - **F-AI-04.4:** On model refusal, the system shall return **HTTP 200** with an **empty list** and a human-readable **reason in the `message` field** (refusal is not an error).
 - **F-AI-04.5:** The system shall enforce a **60-second timeout** on study-material generation.
@@ -212,7 +212,7 @@ Every value, enum, limit, and endpoint in this document is aligned with the proj
 - **F-MON-03.1:** The system shall intercept AI requests (chat, quiz, flashcard) and enforce the daily quota using Redis key `user:ai_limit:{userId}:{yyyy-MM-dd}`.
 - **F-MON-03.2:** The system shall increment the counter atomically via `INCR`.
 - **F-MON-03.3:** The system shall set a **24-hour TTL** on the key when it is first created for the day.
-- **F-MON-03.4:** The quota is a **shared counter** across chat + quiz + flashcard (**Free 15/day, Premium 500/day**). There is **no midnight cron** — reset is lazy/Redis-based via the daily-rotating key.
+- **F-MON-03.4:** The quota is a **shared counter** across chat + quiz + flashcard (**Free 15/day, Premium 60/day**). There is **no midnight cron** — reset is lazy/Redis-based via the daily-rotating key.
 - **F-MON-03.5:** On overflow, the system shall return **HTTP 429**, **not** increment the counter, and **not** invoke the LLM/RAG service.
 
 ### 34. Subscription Expiry — Scheduled & Lazy Downgrade (F-MON-04)

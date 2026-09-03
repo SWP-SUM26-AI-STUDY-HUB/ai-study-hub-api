@@ -37,11 +37,14 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, UUID> 
      * Uses LEFT JOIN on tags for keyword matching in tag labels.
      */
     @Query("SELECT DISTINCT d FROM DocumentEntity d " +
+           "LEFT JOIN d.tags t " +
            "WHERE d.visibility = :visibility " +
            "AND d.status = :status " +
            "AND d.deletedAt IS NULL " +
-           "AND (LOWER(d.title) LIKE LOWER(CONCAT('%', :keyword, '%')) " +
-           "  OR LOWER(d.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+           "AND (CAST(function('unaccent', LOWER(d.title)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
+           "  OR CAST(function('unaccent', LOWER(d.description)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string) " +
+           "  OR ((t.visibility IS NULL OR t.visibility = vn.ai_study_hub_api.model.TagVisibility.PUBLIC) " +
+           "      AND CAST(function('unaccent', LOWER(t.label)) AS string) LIKE CAST(function('unaccent', LOWER(CONCAT('%', :keyword, '%'))) AS string)))")
     List<DocumentEntity> searchPublicDocuments(
             @Param("keyword") String keyword,
             @Param("visibility") DocumentVisibility visibility,

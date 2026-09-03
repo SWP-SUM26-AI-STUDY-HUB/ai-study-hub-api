@@ -51,20 +51,16 @@ public class TrendingDocumentServiceImpl implements TrendingDocumentService {
      */
     @Override
     @Transactional(readOnly = true)
-    public Page<TrendingDocumentResponse> getTrendingDocuments(Pageable pageable) {
-        TrendingPage cached = trendingDocumentCacheLoader.loadTrendingPage(pageable);
+    public List<TrendingDocumentResponse> getTrendingDocuments() {
+        List<TrendingDocumentResponse> content = trendingDocumentCacheLoader.loadTrendingDocuments();
 
-        List<TrendingDocumentResponse> content = cached.getContent();
         if (content == null || content.isEmpty()) {
-            return Page.empty(pageable);
+            return Collections.emptyList();
         }
 
         enrichPrivateTagsForOwner(content);
 
-        return new PageImpl<>(
-                content,
-                PageRequest.of(cached.getPageNumber(), cached.getPageSize()),
-                cached.getTotalElements());
+        return content;
     }
 
     /**

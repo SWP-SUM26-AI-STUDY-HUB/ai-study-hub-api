@@ -209,7 +209,7 @@ public class        DocumentController {
      * Accessible by both guests and authenticated users.
      *
      * AC F-DOC-05 Scenario 1:
-     * - Queries document titles, tags, and extracted text content (description/summary)
+     * - Queries document titles, tags, and extracted text content (description)
      * - Filters out soft-deleted, private, pending, or rejected documents
      * - Returns only active (COMPLETED) public documents
      * - Target response time: < 1.5 seconds
@@ -218,11 +218,11 @@ public class        DocumentController {
     @ResponseStatus(HttpStatus.OK)
     @Operation(
             summary = "Search public documents",
-            description = "Tìm kiếm tài liệu công khai theo từ khoá trong title, tags, description, summary. " +
-                    "Guest và User đều có thể truy cập. Chỉ trả về tài liệu public, active (COMPLETED), chưa bị xóa."
+            description = "Search public documents by keyword in title, tags, and description. " +
+                    "Accessible by both guests and authenticated users. Returns only public, active (COMPLETED), non-deleted documents."
     )
     public ApiResponse<java.util.List<vn.ai_study_hub_api.controller.response.DocumentResponse>> searchPublicDocuments(
-            @Parameter(description = "Từ khoá tìm kiếm", required = true)
+            @Parameter(description = "Search keyword", required = true)
             @RequestParam("keyword") String keyword) {
 
         log.info("Received search request with keyword: '{}'", keyword);

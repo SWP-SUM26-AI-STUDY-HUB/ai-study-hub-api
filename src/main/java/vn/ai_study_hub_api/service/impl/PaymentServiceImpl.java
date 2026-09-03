@@ -231,14 +231,14 @@ public class PaymentServiceImpl implements PaymentService {
             userRepository.save(user);
             log.info("Successfully updated invoice {} and upgraded user {} to plan {}", invoiceId, user.getId(), invoice.getPlanId());
 
-            // Lưu thông báo thành công cho người dùng
+            // Save success notification for the user
             StoragePlanEntity upgradedPlan = storagePlanRepository.findById(invoice.getPlanId()).orElse(null);
             String planName = upgradedPlan != null ? upgradedPlan.getName() : "Premium";
             
             notificationRepository.save(NotificationEntity.builder()
                     .user(user)
-                    .title("Nâng cấp gói cước thành công")
-                    .content("Chúc mừng! Tài khoản của bạn đã được nâng cấp lên gói " + planName + " thành công. Hạn sử dụng của bạn là đến " + user.getPlanExpiresAt())
+                    .title("Plan Upgraded Successfully")
+                    .content("Congratulations! Your account has been successfully upgraded to the " + planName + " plan. Your plan is valid until " + user.getPlanExpiresAt())
                     .type("PLAN_UPGRADED")
                     .targetId(invoice.getPlanId() != null ? invoice.getPlanId().toString() : "Premium")
                     .isRead(false)
@@ -269,7 +269,7 @@ public class PaymentServiceImpl implements PaymentService {
 
         return invoices.stream().map(invoice -> {
             String planName = planNameMap.getOrDefault(invoice.getPlanId(), "Premium");
-            String content = "Thanh toán nâng cấp tài khoản - Gói " + planName;
+            String content = "Account Upgrade Payment - Plan " + planName;
             
             return TransactionHistoryResponse.builder()
                     .id(invoice.getId())

@@ -51,11 +51,22 @@ public class StudyMaterialServiceImpl implements StudyMaterialService {
     @Transactional
     public Outcome<QuizGenerateResponse> generateQuiz(StudyMaterialRequest request, UUID userId) {
         validate(request);
-        // 1. Quota — enforced before the RAG call (matches ChatService.chat). A refusal still
+        // 1. Document access + readiness BEFORE charging quota. A document that hasn't finished
+        //    processing (chunks/embeddings not indexed yet) makes RAG return empty items, so we
+        //    refuse with a clear message instead — without consuming the quota.
+        DocumentEntity document = loadAccessibleDocument(request.getDocumentId(), userId);
+        if (!DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            NotReadyResult nr = persistNotReadyTurn(request, userId, document, "Quiz", "quiz", "quiz questions");
+            return new Outcome<>(QuizGenerateResponse.builder()
+                    .quiz(List.of())
+                    .remainingRequests(nr.remainingRequests())
+                    .dailyLimit(nr.dailyLimit())
+                    .sessionId(nr.sessionId())
+                    .build(), nr.reason());
+        }
+        // 2. Quota — enforced before the RAG call (matches ChatService.chat). A refusal still
         //    consumes the quota.
         AiQuotaService.QuotaInfo quota = aiQuotaService.checkAndIncrement(userId);
-        // 2. Document access (owner OR public+completed, never deleted).
-        DocumentEntity document = loadAccessibleDocument(request.getDocumentId(), userId);
         // 3. Resolve/create the chat session the generation is recorded under.
         ChatSessionEntity session = resolveOrCreateSession(request.getSessionId(), userId,
                 "Quiz · " + truncate(document.getTitle(), TITLE_MAX_LENGTH));
@@ -92,8 +103,20 @@ public class StudyMaterialServiceImpl implements StudyMaterialService {
     @Transactional
     public Outcome<FlashcardGenerateResponse> generateFlashcard(StudyMaterialRequest request, UUID userId) {
         validate(request);
-        AiQuotaService.QuotaInfo quota = aiQuotaService.checkAndIncrement(userId);
+        // Document access + readiness BEFORE charging quota (mirrors generateQuiz): a document
+        // that hasn't finished processing makes RAG return empty items, so we refuse without
+        // consuming the quota.
         DocumentEntity document = loadAccessibleDocument(request.getDocumentId(), userId);
+        if (!DocumentStatus.COMPLETED.equals(document.getStatus())) {
+            NotReadyResult nr = persistNotReadyTurn(request, userId, document, "Flashcards", "flashcards", "flashcards");
+            return new Outcome<>(FlashcardGenerateResponse.builder()
+                    .flashcards(List.of())
+                    .remainingRequests(nr.remainingRequests())
+                    .dailyLimit(nr.dailyLimit())
+                    .sessionId(nr.sessionId())
+                    .build(), nr.reason());
+        }
+        AiQuotaService.QuotaInfo quota = aiQuotaService.checkAndIncrement(userId);
         ChatSessionEntity session = resolveOrCreateSession(request.getSessionId(), userId,
                 "Flashcards · " + truncate(document.getTitle(), TITLE_MAX_LENGTH));
         attachDocument(session, document);
@@ -149,6 +172,47 @@ public class StudyMaterialServiceImpl implements StudyMaterialService {
             throw new AppException(HttpStatus.FORBIDDEN, "You do not have access to this document");
         }
         return document;
+    }
+
+    private record NotReadyResult(UUID sessionId, int remainingRequests, int dailyLimit, String reason) {
+    }
+
+    /**
+     * Persist a generation request + a bot readiness reply when the document isn't COMPLETED yet
+     * (chunks/embeddings aren't indexed), mirroring {@code ChatServiceImpl}'s readiness guard:
+     * the user turn and the bot's message are still recorded into a session (so the failed
+     * attempt shows in history), but the daily quota is NOT charged and the RAG service is NOT
+     * called — no generation was performed.
+     */
+    private NotReadyResult persistNotReadyTurn(StudyMaterialRequest request, UUID userId, DocumentEntity document,
+                                               String sessionTitlePrefix, String userContentLabel, String botTypeLabel) {
+        ChatSessionEntity session = resolveOrCreateSession(request.getSessionId(), userId,
+                sessionTitlePrefix + " · " + truncate(document.getTitle(), TITLE_MAX_LENGTH));
+        attachDocument(session, document);
+        session = chatSessionRepository.save(session);
+
+        chatMessageRepository.save(ChatMessageEntity.builder()
+                .id(UUID.randomUUID())
+                .session(session)
+                .sender(MessageSender.USER)
+                .content(buildUserContent(userContentLabel, request))
+                .build());
+
+        String reason = documentNotReadyMessage(document.getStatus());
+        chatMessageRepository.save(buildMaterialBotMessage(session, null, List.of(),
+                true, reason, botTypeLabel));
+
+        AiQuotaService.QuotaInfo usage = aiQuotaService.getUsage(userId);
+        return new NotReadyResult(session.getId(), usage.remaining(), usage.dailyLimit(), reason);
+    }
+
+    private String documentNotReadyMessage(DocumentStatus status) {
+        return switch (status) {
+            case FAILED -> "Tài liệu xử lý thất bại. Vui lòng tải lại tài liệu rồi thử lại.";
+            case REJECTED -> "Tài liệu đã bị từ chối nên không thể sử dụng.";
+            // UPLOADING / PROCESSING / PENDING — chunks/embeddings aren't ready yet.
+            default -> "Tài liệu đang được xử lý, vui lòng đợi trong giây lát rồi thử lại.";
+        };
     }
 
     /**

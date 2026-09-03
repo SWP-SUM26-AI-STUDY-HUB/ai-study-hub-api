@@ -82,7 +82,7 @@ public class UserSanctionServiceImpl implements UserSanctionService {
         // Send ban notification
         NotificationEntity notification = NotificationEntity.builder()
                 .user(user)
-                .title("Tài khoản bị khóa (Banned)")
+                .title("Account Banned")
                 .content(reason)
                 .type("ACCOUNT_BANNED")
                 .targetId(user.getId().toString())
@@ -115,8 +115,8 @@ public class UserSanctionServiceImpl implements UserSanctionService {
         // Send warning notification with count
         NotificationEntity notification = NotificationEntity.builder()
                 .user(user)
-                .title("Cảnh báo tài khoản (Warn)")
-                .content(String.format("Bạn đã bị cảnh báo %d lần. Lý do: %s", warnCount, reason))
+                .title("Account Warning")
+                .content(String.format("You have been warned %d times. Reason: %s", warnCount, reason))
                 .type("ACCOUNT_WARNING")
                 .targetId(user.getId().toString())
                 .isRead(false)
@@ -167,8 +167,8 @@ public class UserSanctionServiceImpl implements UserSanctionService {
         // Send reactivation notification
         NotificationEntity notification = NotificationEntity.builder()
                 .user(user)
-                .title("Tài khoản được mở khóa (Reactivated)")
-                .content("Tài khoản của bạn đã được quản trị viên mở khóa và kích hoạt lại.")
+                .title("Account Reactivated")
+                .content("Your account has been reactivated by the administrator.")
                 .type("ACCOUNT_ACTIVATED")
                 .targetId(user.getId().toString())
                 .isRead(false)

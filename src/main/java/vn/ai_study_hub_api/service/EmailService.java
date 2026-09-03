@@ -31,7 +31,8 @@ public class EmailService {
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
-        String resetLink = baseUrl + "/reset-password?token=" + resetToken;
+        String encodedEmail = java.net.URLEncoder.encode(toEmail, java.nio.charset.StandardCharsets.UTF_8);
+        String resetLink = baseUrl + "/reset-password?email=" + encodedEmail + "&token=" + resetToken;
 
         jakarta.mail.internet.MimeMessage message = mailSender.createMimeMessage();
         try {

@@ -75,13 +75,13 @@ public class PlanExpirationSchedulerTest {
         verify(notificationRepository).save(captor.capture());
 
         NotificationEntity notification = captor.getValue();
-        assertEquals("Gói cước sắp hết hạn", notification.getTitle());
+        assertEquals("Storage Plan Expiring Soon", notification.getTitle());
         assertEquals(user, notification.getUser());
         assertEquals("PLAN_EXPIRING", notification.getType());
         assertEquals("2", notification.getTargetId());
         assertFalse(notification.getIsRead());
         assertTrue(notification.getContent().contains("Premium Plus"));
-        assertTrue(notification.getContent().contains("gia hạn"));
+        assertTrue(notification.getContent().contains("renew"));
     }
 
     @Test

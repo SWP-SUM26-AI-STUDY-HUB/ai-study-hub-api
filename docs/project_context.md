@@ -124,7 +124,7 @@ The MVP implements a strict subscription and rate-limiting scheme to manage LLM 
 | Feature / Limit | Free Plan | Premium Plan |
 | :--- | :--- | :--- |
 | **Cloud Storage** | 2 GB | 10 GB |
-| **Daily AI Requests** | 15 / day | 500 / day |
+| **Daily AI Requests** | 15 / day | 60 / day |
 | **Shared AI Quota** | chat + quiz + flashcard | chat + quiz + flashcard |
 | **Max Upload Size** | 50 MB | 50 MB |
 | **Accepted Formats** | `.pdf`, `.docx`, `.txt`, `.md` | same |

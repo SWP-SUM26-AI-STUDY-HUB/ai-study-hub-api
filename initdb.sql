@@ -187,6 +187,7 @@ CREATE TABLE "notifications" (
 );
 
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS unaccent;
 
 CREATE TABLE "document_chunks" (
   "id" uuid PRIMARY KEY,

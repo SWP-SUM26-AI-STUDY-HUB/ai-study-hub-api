@@ -67,7 +67,7 @@ public class PaymentServiceImplTest {
                 .name("Premium")
                 .price(new BigDecimal("200000"))
                 .storageLimit(10L)
-                .maxAiRequestsPerDay(500)
+                .maxAiRequestsPerDay(60)
                 .build();
 
         InvoiceEntity invoice = InvoiceEntity.builder()
@@ -143,7 +143,7 @@ public class PaymentServiceImplTest {
         assertEquals(new BigDecimal("200000"), res1.getAmount());
         assertEquals(InvoiceStatus.PENDING, res1.getStatus());
         assertEquals("VNPAY", res1.getProvider());
-        assertEquals("Thanh toán nâng cấp tài khoản - Gói Premium", res1.getContent());
+        assertEquals("Account Upgrade Payment - Plan Premium", res1.getContent());
         assertEquals(invoice2.getCreatedAt(), res1.getCreatedAt());
 
         TransactionHistoryResponse res2 = history.get(1);
@@ -152,7 +152,7 @@ public class PaymentServiceImplTest {
         assertEquals(new BigDecimal("100000"), res2.getAmount());
         assertEquals(InvoiceStatus.SUCCESS, res2.getStatus());
         assertEquals("VNPAY", res2.getProvider());
-        assertEquals("Thanh toán nâng cấp tài khoản - Gói Basic", res2.getContent());
+        assertEquals("Account Upgrade Payment - Plan Basic", res2.getContent());
         assertEquals(invoice1.getCreatedAt(), res2.getCreatedAt());
         
         verify(storagePlanRepository).findAll();
